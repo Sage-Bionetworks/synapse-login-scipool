@@ -1,5 +1,7 @@
 branch-defaults:
-  master:
+  develop:
+    environment: synapse-login-scipooldev
+  prod:
     environment: synapse-login-scipoolprod
 global:
   application_name: synapse-login
