@@ -4,9 +4,6 @@ jdk:
 cache:
   directories:
   - $HOME/.m2
-branches:
-  only:
-  - master
 before_install:
   - pyenv global 3.6
 install:
@@ -16,14 +13,20 @@ install:
   - pip install --upgrade pre-commit awsebcli
 stages:
   - name: test
-  - name: deploy
-    if: type = push
+  - name: deploy-scipooldev
+    if: type = push AND branch = develop
+  - name: deploy-scipoolprod
+    if: type = push AND branch = prod
 jobs:
   include:
     - stage: test
       script:
         - mvn clean test
-    - stage: deploy
+    - stage: deploy-scipooldev
+      script:
+        - mvn clean package
+        - eb deploy synapse-login-scipooldev --profile default --region us-east-1 --verbose
+    - stage: deploy-scipoolprod
       script:
         - mvn clean package
         - eb deploy synapse-login-scipoolprod --profile default --region us-east-1 --verbose
