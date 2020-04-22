@@ -39,3 +39,6 @@ target/
 !.elasticbeanstalk/*.cfg.yml
 !.elasticbeanstalk/*.global.yml
 !.elasticbeanstalk/config.yml
+
+# temp
+temp/
