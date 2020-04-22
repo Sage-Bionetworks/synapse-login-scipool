@@ -71,17 +71,19 @@ Contributions are welcome
 
 ## Development Workflow
 This project has two branches `develop`, and `prod`.  When proposing changes to this project
-the workflow is to propose the changes to develop branch then promote to prod branch.
+the workflow is to create a PR against develop branch, merge it there then promote it to
+prod branch.
 
 step by step:
 1. Propose PR to develop branch
 2. Review and approve the PR then merge it to develop branch
 3. CI/CD system builds, test, and deploys artifact from develop branch to AWS dev
-environment in org-sagebase-scipooldev
+environment in the org-sagebase-scipooldev AWS account
 4. Manually verify application in dev environment
 5. Promote to prod environment in org-sagebase-scipoolprod by merging the commit to the
 prod branch
-6. CI/CD system deploys to prod environment.
+6. CI/CD system deploys to prod environment
+7. Verify again in prod environment
 
 ## Issues
 * https://sagebionetworks.jira.com/projects/SC
