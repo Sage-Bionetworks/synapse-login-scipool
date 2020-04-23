@@ -67,8 +67,8 @@ public class Auth extends HttpServlet {
 	private static final String AWS_SIGN_IN_URL = "https://signin.aws.amazon.com/federation";
 	private static final String USER_CLAIMS_DEFAULT="userid";
 	private static final String SIGNIN_TOKEN_URL_TEMPLATE = AWS_SIGN_IN_URL + 
-            "?Action=getSigninToken&DurationSeconds=%1$s&SessionType=json&Session=%2$s";
-	private static final String PROPERTIES_FILENAME_PARAMETER = "PROPERTIES_FILENAME";
+            "?Action=getSigninToken&SessionDuration=%1$s&SessionType=json&Session=%2$s";
+	static final String PROPERTIES_FILENAME_PARAMETER = "PROPERTIES_FILENAME";
 	private static final int SESSION_TIMEOUT_SECONDS_DEFAULT = 43200;
 	
 	private Map<String,String> teamToRoleMap;
@@ -170,7 +170,7 @@ public class Auth extends HttpServlet {
 	}
 	
 	// from https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_enable-console-custom-url.html#STSConsoleLink_programJava
-	String getConsoleLoginURL(HttpServletRequest req, Credentials federatedCredentials) throws IOException {
+	String getConsoleLoginURL(HttpServletRequest req, Credentials federatedCredentials, HttpGetExecutor httpGetExecutor) throws IOException {
 
 		String issuerURL = getThisEndpoint(req);
 
@@ -195,14 +195,7 @@ public class Auth extends HttpServlet {
 		String getSigninTokenURL = String.format(SIGNIN_TOKEN_URL_TEMPLATE, 
 				sessionTimeoutSeconds, URLEncoder.encode(sessionJson,"UTF-8"));
 
-		URL url = new URL(getSigninTokenURL);
-
-		// Send the request to the AWS federation endpoint to get the sign-in token
-		URLConnection conn = url.openConnection();
-
-		BufferedReader bufferReader = new BufferedReader(new 
-		  InputStreamReader(conn.getInputStream()));  
-		String returnContent = bufferReader.readLine();
+		String returnContent = httpGetExecutor.executeHttpGet(getSigninTokenURL);
 
 		String signinToken = new JSONObject(returnContent).getString("SigninToken");
 
@@ -313,7 +306,16 @@ public class Auth extends HttpServlet {
 			AssumeRoleWithWebIdentityResult assumeRoleWithWebIdentityResult = stsClient.assumeRoleWithWebIdentity(assumeRoleWithWebIdentityRequest);
 			Credentials credentials = assumeRoleWithWebIdentityResult.getCredentials();
 			// redirect to AWS login
-			String redirectURL = getConsoleLoginURL(req, credentials);
+			String redirectURL = getConsoleLoginURL(req, credentials, new HttpGetExecutor() {
+
+				@Override
+				public String executeHttpGet(String urlString) throws IOException {
+					URL url = new URL(urlString);
+					URLConnection conn = url.openConnection();
+					BufferedReader bufferReader = new BufferedReader(
+							new InputStreamReader(conn.getInputStream()));  
+					return bufferReader.readLine();
+				}});
 			
 			resp.setHeader("Location", redirectURL);
 			resp.setStatus(302);
