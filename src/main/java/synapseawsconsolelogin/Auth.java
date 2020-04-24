@@ -148,8 +148,12 @@ public class Auth extends HttpServlet {
 		return result;
 	}
 	
-	private String getClientSecretSynapse() {
-		String result =  getProperty("SYNAPSE_OAUTH_CLIENT_SECRET");
+	String getClientSecretSynapse() {
+		String clientSecretParameterName = getProperty("SYNAPSE_OAUTH_CLIENT_SECRET_PARAMETER_NAME", false);
+		if (missing(clientSecretParameterName)) {
+			clientSecretParameterName = "SYNAPSE_OAUTH_CLIENT_SECRET";
+		}
+		String result =  getProperty(clientSecretParameterName);
 		return result;
 	}
 

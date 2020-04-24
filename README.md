@@ -11,7 +11,8 @@ like so:
 
 ```
 SYNAPSE_OAUTH_CLIENT_ID=xxxxxx
-SYNAPSE_OAUTH_CLIENT_SECRET=xxxxxx
+SYNAPSE_OAUTH_CLIENT_SECRET_PARAMETER_NAME=<someSecretName>
+<someSecretName>=xxxxxx
 TEAM_TO_ROLE_ARN_MAP=[{"teamId":"xxxxxx","roleArn":"arn:aws:iam::xxxxxx:role/ServiceCatalogEndusers"}, ...]
 AWS_REGION=us-east-1
 SESSION_TIMEOUT_SECONDS=43200
@@ -27,7 +28,7 @@ In the case that a parameter is passed in multiple ways, priority is as follows:
 - Properties file entry
 - SSM parameter
 
-Note:  The intention is to use SSM to securely store the OAuth client secret.  Instructions on how to put a parameter into SSM can be found [here](https://docs.aws.amazon.com/cli/latest/reference/ssm/put-parameter.html).  To store the client secret, use `--name SYNAPSE_OAUTH_CLIENT_SECRET`, `--type SecureString` and set `--value` to the client secret.
+Note:  The intention is to use SSM to securely store the OAuth client secret.  Instructions on how to put a parameter into SSM can be found [here](https://docs.aws.amazon.com/cli/latest/reference/ssm/put-parameter.html).  To store the client secret, use `--name <someSecretName>`, `--type SecureString` and set `--value` to the client secret.  Include `<someSecretName>` in the properties as shown above.
 
 ### Team to role map
 This defines the mapping between the synapse team and the AWS role. When

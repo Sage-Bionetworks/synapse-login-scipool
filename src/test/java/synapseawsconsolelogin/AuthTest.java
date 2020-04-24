@@ -45,6 +45,8 @@ public class AuthTest {
 		System.setProperty("AWS_REGION", "us-east-1");
 		System.setProperty("USER_CLAIMS", "userid,user_name");
 		System.setProperty(Auth.PROPERTIES_FILENAME_PARAMETER, "test.properties");
+		System.clearProperty("SYNAPSE_OAUTH_CLIENT_SECRET_PARAMETER_NAME");
+		System.clearProperty("SYNAPSE_OAUTH_CLIENT_SECRET");
 	}
 	
 	@After
@@ -53,6 +55,8 @@ public class AuthTest {
 		System.clearProperty("AWS_REGION");
 		System.clearProperty("USER_CLAIMS");
 		System.clearProperty(TEST_PROPERTY_NAME);
+		System.clearProperty("SYNAPSE_OAUTH_CLIENT_SECRET_PARAMETER_NAME");
+		System.clearProperty("SYNAPSE_OAUTH_CLIENT_SECRET");
 	}
 	
 	@Test
@@ -157,6 +161,28 @@ public class AuthTest {
 				 "&Issuer=https%3Awww.foo.com&Destination=https%3A%2F%2Fus-east-1.console.aws.amazon.com%2Fservicecatalog%2Fhome%3Fregion%3Dus-east-1%23%2Fproducts";
 		
 		assertEquals(expected, actual);
+	}
+	
+	@Test
+	public void testGGetClientSecretSynapse() {
+		String aSecret = "A secret";
+		System.setProperty("SYNAPSE_OAUTH_CLIENT_SECRET", aSecret);
+		Auth auth = new Auth();
+		// method under test
+		assertEquals(aSecret, auth.getClientSecretSynapse());
+		
+		// we now change the name for the parameter to something else
+		String someOtherSecretName = "secret name";
+		String someOtherSecret = "some other secret";
+		try {
+		System.setProperty("SYNAPSE_OAUTH_CLIENT_SECRET_PARAMETER_NAME", someOtherSecretName);
+		System.setProperty(someOtherSecretName, someOtherSecret);
+		auth = new Auth();
+		assertEquals(someOtherSecret, auth.getClientSecretSynapse());
+		} finally {
+			System.clearProperty(someOtherSecretName);
+			System.clearProperty("SYNAPSE_OAUTH_CLIENT_SECRET_PARAMETER_NAME");
+		}
 	}
 
 }
