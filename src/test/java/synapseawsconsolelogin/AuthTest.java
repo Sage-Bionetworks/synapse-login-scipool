@@ -10,10 +10,7 @@ import java.util.UUID;
 
 import javax.servlet.http.HttpServletRequest;
 
-import org.junit.After;
-import org.junit.Assume;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.*;
 import org.junit.runner.RunWith;
 import org.mockito.Mock;
 import org.mockito.runners.MockitoJUnitRunner;
@@ -45,6 +42,8 @@ public class AuthTest {
 		System.setProperty("AWS_REGION", "us-east-1");
 		System.setProperty("USER_CLAIMS", "userid,user_name");
 		System.setProperty(Auth.PROPERTIES_FILENAME_PARAMETER, "test.properties");
+		System.setProperty("SESSION_TIMEOUT_SECONDS", "10");
+		System.setProperty("synapseawsconsolelogin.version", "2.3");
 	}
 	
 	@After
@@ -53,6 +52,8 @@ public class AuthTest {
 		System.clearProperty("AWS_REGION");
 		System.clearProperty("USER_CLAIMS");
 		System.clearProperty(TEST_PROPERTY_NAME);
+		System.clearProperty("SESSION_TIMEOUT_SECONDS");
+		System.clearProperty("synapseawsconsolelogin.version");
 	}
 	
 	@Test
@@ -92,14 +93,17 @@ public class AuthTest {
 		assertEquals(value, auth.getProperty(TEST_PROPERTY_NAME));
 	}
 
+
 	@Test
 	public void testGetMissingOptionalProperty() {
+		Assume.assumeTrue(System.getProperty("SKIP_AWS")==null);
 		Auth auth = new Auth();
 		assertNull(auth.getProperty("undefined-property", false));
 	}
 	
 	@Test
 	public void testGetSSMParameter() {
+		Assume.assumeTrue(System.getProperty("SKIP_AWS")==null);
 		// we only want to run this test if we can connect to AWS
 		AWSCredentials credentials = null;
 		try {
@@ -157,6 +161,12 @@ public class AuthTest {
 				 "&Issuer=https%3Awww.foo.com&Destination=https%3A%2F%2Fus-east-1.console.aws.amazon.com%2Fservicecatalog%2Fhome%3Fregion%3Dus-east-1%23%2Fproducts";
 		
 		assertEquals(expected, actual);
+	}
+
+	@Test
+	public void testGetVersionProperty() throws Exception {
+		Auth auth = new Auth();
+		assertEquals("2.3", auth.getProperty("synapseawsconsolelogin.version", true));
 	}
 
 }

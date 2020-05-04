@@ -6,7 +6,7 @@
 	<groupId>SynapseAWSConsoleLogin</groupId>
 	<artifactId>SynapseAWSConsoleLogin</artifactId>
 	<packaging>war</packaging>
-	<version>1.0</version>
+	<version>develop-SNAPSHOT</version>
 	<name>SynapseAWSConsoleLogin Maven Webapp</name>
 	<url>http://maven.apache.org</url>
 

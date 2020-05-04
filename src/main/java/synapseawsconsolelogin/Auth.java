@@ -2,11 +2,7 @@
 package synapseawsconsolelogin;
 
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.PrintStream;
+import java.io.*;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLConnection;
@@ -63,6 +59,7 @@ public class Auth extends HttpServlet {
 	private static final String TOKEN_URL = "https://repo-prod.prod.sagebase.org/auth/v1/oauth2/token";
 	private static final String REDIRECT_URI = "/synapse";
 	private static final String HEALTH_URI = "/health";
+	public static final String VERSION_URI = "/version";
 	private static final String AWS_CONSOLE_URL_TEMPLATE = "https://%1$s.console.aws.amazon.com/servicecatalog/home?region=%1$s#/products";
 	private static final String AWS_SIGN_IN_URL = "https://signin.aws.amazon.com/federation";
 	private static final String USER_CLAIMS_DEFAULT="userid";
@@ -70,6 +67,7 @@ public class Auth extends HttpServlet {
             "?Action=getSigninToken&SessionDuration=%1$s&SessionType=json&Session=%2$s";
 	static final String PROPERTIES_FILENAME_PARAMETER = "PROPERTIES_FILENAME";
 	private static final int SESSION_TIMEOUT_SECONDS_DEFAULT = 43200;
+	public static final String VERSION_INFO_FILENAME = "version-info.properties";
 	
 	private Map<String,String> teamToRoleMap;
 	private String sessionTimeoutSeconds;
@@ -321,6 +319,15 @@ public class Auth extends HttpServlet {
 			resp.setStatus(302);
 		}	else if (uri.equals(HEALTH_URI)) {
 			resp.setStatus(200);
+		} else if (uri.equals(VERSION_URI)) {
+			JSONObject o = new JSONObject();
+			o.put("version", getProperty("synapseawsconsolelogin.version"));
+			resp.setContentType("application/json");
+			resp.setCharacterEncoding("UTF-8");
+			resp.setStatus(200);
+			PrintWriter out = resp.getWriter();
+			out.print(o.toString());
+			out.flush();
 		} else {
 			throw new RuntimeException("Unexpected URI "+req.getRequestURI());
 		}
@@ -339,11 +346,17 @@ public class Auth extends HttpServlet {
 			propertyFileName = "global.properties";
 			
 		}
-		
+
+		properties.putAll(loadProperties(propertyFileName));
+		properties.putAll(loadProperties(VERSION_INFO_FILENAME));
+	}
+
+	private Properties loadProperties(String propertyFileName) {
+		Properties props = new Properties();
 		InputStream is = null;
 		try {
 			is = Auth.class.getClassLoader().getResourceAsStream(propertyFileName);
-			if (is!=null) properties.load(is);
+			if (is!=null) props.load(is);
 		} catch (IOException e) {
 			logger.log(Level.INFO, propertyFileName+" does not exist.");
 		} finally {
@@ -353,6 +366,7 @@ public class Auth extends HttpServlet {
 				throw new RuntimeException(e);
 			}
 		}
+		return props;
 	}
 
 	public String getProperty(String key) {
