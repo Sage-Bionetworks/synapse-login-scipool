@@ -133,6 +133,9 @@ public class AuthTest {
 			// cannot continue with this integration test
 			return;
 		}
+		
+		// verify that the property is now available
+		assertEquals(propertyValue, auth.getProperty(propertyName, false));
 	}
 		
 	@Test
