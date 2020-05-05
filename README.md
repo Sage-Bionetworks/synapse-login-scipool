@@ -15,7 +15,8 @@ SYNAPSE_OAUTH_CLIENT_SECRET=xxxxxx
 TEAM_TO_ROLE_ARN_MAP=[{"teamId":"xxxxxx","roleArn":"arn:aws:iam::xxxxxx:role/ServiceCatalogEndusers"}, ...]
 AWS_REGION=us-east-1
 SESSION_TIMEOUT_SECONDS=43200
-USER_CLAIMS=userid
+SESSION_NAME_CLAIMS=userid
+SESSION_TAG_CLAIMS=sub,userid,user_name
 ```
 
 The name of the properties file, `global.properties` can be overridden by setting an environment variable or 
@@ -35,11 +36,12 @@ mapping team ID to AWS Role, this app' uses the first match it encounters,
 iterating through the team/role list in the order given. 
 
 ### Claims
-The `USER_CLAIMS` config is a comma separated list of claims from the list of
+The `SESSION_TAG_CLAIMS` config is a comma separated list of claims from the list of
 available claims, given here:
 https://rest-docs.synapse.org/rest/org/sagebionetworks/repo/model/oauth/OIDCClaimName.html
+used to define tags in the AWS session.  The tags are names `synapse_`<claim_name>, where <claim_name> is the name of the claim given in the config file.
 
-For example: setting `USER_CLAIMS=userid,email` will display
+The `SESSION_NAME_CLAIMS` config is also a comma separated list of claims, but used to define the session name, as a colon delimited list of claim values. For example: setting `SESSION_NAME_CLAIMS=userid,email` will display
 `ServiceCatalogEndusers/1234567:joe.smith@gmail.com` in AWS. 
 
 ## Building the app

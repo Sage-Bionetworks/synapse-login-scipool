@@ -43,7 +43,7 @@ public class AuthTest {
 	public void before() {
 		System.setProperty("TEAM_TO_ROLE_ARN_MAP","[{\"teamId\":\"123456\",\"roleArn\":\"arn:aws:iam::foo\"},{\"teamId\":\"345678\",\"roleArn\":\"arn:aws:iam::bar\"}]");
 		System.setProperty("AWS_REGION", "us-east-1");
-		System.setProperty("USER_CLAIMS", "userid,user_name");
+		System.setProperty("SESSION_TAG_CLAIMS", "userid,user_name");
 		System.setProperty(Auth.PROPERTIES_FILENAME_PARAMETER, "test.properties");
 	}
 	
@@ -51,7 +51,7 @@ public class AuthTest {
 	public void after() {
 		System.clearProperty("TEAM_TO_ROLE_ARN_MAP");
 		System.clearProperty("AWS_REGION");
-		System.clearProperty("USER_CLAIMS");
+		System.clearProperty("SESSION_TAG_CLAIMS");
 		System.clearProperty(TEST_PROPERTY_NAME);
 	}
 	
@@ -70,7 +70,7 @@ public class AuthTest {
 	public void testGetAuthUrl() {
 		Auth auth = new Auth();
 		
-		String expected = "https://signin.synapse.org?response_type=code&client_id=%s&redirect_uri=%s&claims={\"id_token\":{\"team\":{\"values\":[\"123456\",\"345678\"]},\"userid\":{\"essential\":true},\"user_name\":{\"essential\":true}},\"userinfo\":{\"team\":{\"values\":[\"123456\",\"345678\"]},\"userid\":{\"essential\":true},\"user_name\":{\"essential\":true}}}";
+		String expected = "https://signin.synapse.org?response_type=code&client_id=%s&redirect_uri=%s&claims={\"id_token\":{\"team\":{\"values\":[\"123456\",\"345678\"]},\"user_name\":{\"essential\":true},\"userid\":{\"essential\":true}},\"userinfo\":{\"team\":{\"values\":[\"123456\",\"345678\"]},\"user_name\":{\"essential\":true},\"userid\":{\"essential\":true}}}";
 		String actual = auth.getAuthorizeUrl();
 		assertEquals(expected, actual);
 	}

@@ -1,7 +1,6 @@
 
 package synapseawsconsolelogin;
 
-
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
@@ -11,12 +10,17 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLConnection;
 import java.net.URLEncoder;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -35,15 +39,14 @@ import org.scribe.model.Verifier;
 
 import com.amazonaws.AmazonClientException;
 import com.amazonaws.SdkClientException;
-import com.amazonaws.auth.AWSCredentials;
-import com.amazonaws.auth.AWSCredentialsProvider;
 import com.amazonaws.auth.DefaultAWSCredentialsProviderChain;
 import com.amazonaws.regions.Regions;
 import com.amazonaws.services.securitytoken.AWSSecurityTokenService;
 import com.amazonaws.services.securitytoken.AWSSecurityTokenServiceClientBuilder;
-import com.amazonaws.services.securitytoken.model.AssumeRoleWithWebIdentityRequest;
-import com.amazonaws.services.securitytoken.model.AssumeRoleWithWebIdentityResult;
+import com.amazonaws.services.securitytoken.model.AssumeRoleRequest;
+import com.amazonaws.services.securitytoken.model.AssumeRoleResult;
 import com.amazonaws.services.securitytoken.model.Credentials;
+import com.amazonaws.services.securitytoken.model.Tag;
 import com.amazonaws.services.simplesystemsmanagement.AWSSimpleSystemsManagement;
 import com.amazonaws.services.simplesystemsmanagement.AWSSimpleSystemsManagementClientBuilder;
 import com.amazonaws.services.simplesystemsmanagement.model.GetParameterRequest;
@@ -65,11 +68,15 @@ public class Auth extends HttpServlet {
 	private static final String HEALTH_URI = "/health";
 	private static final String AWS_CONSOLE_URL_TEMPLATE = "https://%1$s.console.aws.amazon.com/servicecatalog/home?region=%1$s#/products";
 	private static final String AWS_SIGN_IN_URL = "https://signin.aws.amazon.com/federation";
-	private static final String USER_CLAIMS_DEFAULT="userid";
+	private static final String SESSION_NAME_CLAIMS_PROPERTY_NAME = "SESSION_NAME_CLAIMS";
+	private static final String SESSION_CLAIM_NAMES_DEFAULT="userid";
+	private static final String SESSION_TAG_CLAIMS_PROPERTY_NAME = "SESSION_TAG_CLAIMS";
+	private static final String SESSION_TAG_CLAIMS_DEFAULT = "userid";
 	private static final String SIGNIN_TOKEN_URL_TEMPLATE = AWS_SIGN_IN_URL + 
             "?Action=getSigninToken&SessionDuration=%1$s&SessionType=json&Session=%2$s";
 	static final String PROPERTIES_FILENAME_PARAMETER = "PROPERTIES_FILENAME";
 	private static final int SESSION_TIMEOUT_SECONDS_DEFAULT = 43200;
+	private static final String TAG_PREFIX = "synapse_";
 	
 	private Map<String,String> teamToRoleMap;
 	private String sessionTimeoutSeconds;
@@ -105,16 +112,26 @@ public class Auth extends HttpServlet {
 		awsConsoleUrl = String.format(AWS_CONSOLE_URL_TEMPLATE, awsRegion);
 	}
 	
-	public List<String> getClaimNames() {
-		String userClaimString = getProperty("USER_CLAIMS", false);
-		if (StringUtils.isEmpty(userClaimString)) userClaimString=USER_CLAIMS_DEFAULT;
-		return Arrays.asList(userClaimString.split(","));
+	public List<String> getCommaSeparatedPropertyAsList(String propertyName, String defaultValue) {
+		String propertyValue = getProperty(propertyName, false);
+		if (StringUtils.isEmpty(propertyValue)) propertyValue=defaultValue;
+		return Arrays.asList(propertyValue.split(","));
+	}
+
+	public Set<String> getSessionClaimNames() {
+		return new TreeSet<String>(getCommaSeparatedPropertyAsList(SESSION_NAME_CLAIMS_PROPERTY_NAME, SESSION_CLAIM_NAMES_DEFAULT));
+	}
+
+	public Set<String> getTagClaimNames() {
+		return new TreeSet<String>(getCommaSeparatedPropertyAsList(SESSION_TAG_CLAIMS_PROPERTY_NAME, SESSION_TAG_CLAIMS_DEFAULT));
 	}
 
 	public String getAuthorizeUrl() {
+		Set<String> allClaims = getSessionClaimNames();
+		allClaims.addAll(getTagClaimNames());
 		StringBuilder sb = new StringBuilder();
 		boolean first=true;
-		for (String claimName : getClaimNames()) {
+		for (String claimName : allClaims) {
 			if (first) first=false; else sb.append(",");
 			sb.append(String.format(CLAIM_TEMPLATE, claimName));
 		}
@@ -243,7 +260,11 @@ public class Auth extends HttpServlet {
 			
 			// parse ID Token
 			Jwt<Header,Claims> jwt = parseJWT(idToken.getToken());
-			List<String> teamIds = jwt.getBody().get("team", List.class);
+			Claims claims = jwt.getBody();
+			List<String> teamIds = claims.get("team", List.class);
+			
+			// here we collect all the user information to be added to the session
+			Map<String,String> sessionTags = new HashMap<String,String>();
 			
 			String selectedTeam = null;
 			String roleArn = null;
@@ -252,6 +273,13 @@ public class Auth extends HttpServlet {
 					selectedTeam = teamId;
 					roleArn = teamToRoleMap.get(teamId);
 					break;
+				}
+			}
+			sessionTags.put(TAG_PREFIX+"team", selectedTeam);
+			for (String claimName: getTagClaimNames()) {
+				Object claimValue = claims.get(claimName);
+				if (claimValue!=null) {
+					sessionTags.put(TAG_PREFIX+claimName, claimValue.toString());
 				}
 			}
 			
@@ -273,38 +301,25 @@ public class Auth extends HttpServlet {
 
 			StringBuilder awsSessionName = new StringBuilder();
 			boolean first=true;
-			for (String claimName : getClaimNames()) {
-				String claimValue = jwt.getBody().get(claimName, String.class);
+			for (String claimName : getSessionClaimNames()) {
+				String claimValue = claims.get(claimName, String.class);
 				if (StringUtils.isEmpty(claimValue)) continue;
 				if (first) first=false; else awsSessionName.append(":");
 				awsSessionName.append(claimValue);
 			}
 
 			// get STS token
-			AssumeRoleWithWebIdentityRequest assumeRoleWithWebIdentityRequest = new AssumeRoleWithWebIdentityRequest();
-			assumeRoleWithWebIdentityRequest.setWebIdentityToken(idToken.getToken());
-			assumeRoleWithWebIdentityRequest.setRoleArn(roleArn);
-			assumeRoleWithWebIdentityRequest.setRoleSessionName(awsSessionName.toString());
+			AssumeRoleRequest assumeRoleRequest = new AssumeRoleRequest();
+			assumeRoleRequest.setRoleArn(roleArn);
+			assumeRoleRequest.setRoleSessionName(awsSessionName.toString());
 			AWSSecurityTokenService stsClient = AWSSecurityTokenServiceClientBuilder.standard()
-					.withRegion(Regions.fromName(awsRegion))
-					.withCredentials(new AWSCredentialsProvider() {
-						@Override
-						public AWSCredentials getCredentials() {
-							return new AWSCredentials() {
-								@Override
-								public String getAWSAccessKeyId() {
-									return "dummyKeyId";
-								}
-								@Override
-								public String getAWSSecretKey() {
-									return "dummySecret";
-								}};
-						}
-						@Override
-						public void refresh() {}}).build();
-			
-			AssumeRoleWithWebIdentityResult assumeRoleWithWebIdentityResult = stsClient.assumeRoleWithWebIdentity(assumeRoleWithWebIdentityRequest);
-			Credentials credentials = assumeRoleWithWebIdentityResult.getCredentials();
+					.withRegion(Regions.fromName(awsRegion)).build();
+			//assumeRoleRequest.setDurationSeconds(durationSeconds);
+			Collection<Tag> tags = new ArrayList<Tag>();
+			tags.add(new Tag().withKey("foo").withValue("bar"));
+			assumeRoleRequest.setTags(tags);
+			AssumeRoleResult assumeRoleResult = stsClient.assumeRole(assumeRoleRequest);
+			Credentials credentials = assumeRoleResult.getCredentials();
 			// redirect to AWS login
 			String redirectURL = getConsoleLoginURL(req, credentials, new HttpGetExecutor() {
 
