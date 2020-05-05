@@ -110,6 +110,7 @@ public class AuthTest {
 		Assume.assumeNotNull(credentials, credentials.getAWSAccessKeyId(), credentials.getAWSSecretKey());
 		
 		String propertyName = UUID.randomUUID().toString();
+		String ssmKey = UUID.randomUUID().toString();
 		String propertyValue = UUID.randomUUID().toString();
 		
 		Auth auth = new Auth();
@@ -117,12 +118,14 @@ public class AuthTest {
 		// the property has NOT been stored yet
 		assertNull(auth.getProperty(propertyName, false));
 		
+		System.setProperty(propertyName, "ssm::"+ssmKey);
+		
 		// now let's store the property in SSM
 		try {
 			AWSSimpleSystemsManagement ssmClient = AWSSimpleSystemsManagementClientBuilder.defaultClient();
 			
 			PutParameterRequest putParameterRequest = new PutParameterRequest();
-			putParameterRequest.setName(propertyName);
+			putParameterRequest.setName(ssmKey);
 			putParameterRequest.setValue(propertyValue);
 			putParameterRequest.setType(ParameterType.SecureString);
 			ssmClient.putParameter(putParameterRequest);
