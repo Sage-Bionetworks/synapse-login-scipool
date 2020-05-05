@@ -133,9 +133,31 @@ public class AuthTest {
 			// cannot continue with this integration test
 			return;
 		}
+	}
 		
-		// verify that the property is now available
-		assertEquals(propertyValue, auth.getProperty(propertyName, false));
+	@Test
+	public void testGetSSMParameterMissingValue() {
+		// we only want to run this test if we can connect to AWS
+		AWSCredentials credentials = null;
+		try {
+			credentials = DefaultAWSCredentialsProviderChain.getInstance().getCredentials();
+		} catch (SdkClientException e) {
+			Assume.assumeNoException(e);
+		}
+		Assume.assumeNotNull(credentials, credentials.getAWSAccessKeyId(), credentials.getAWSSecretKey());
+
+		String propertyName = UUID.randomUUID().toString();
+		String ssmKey = UUID.randomUUID().toString();
+
+		Auth auth = new Auth();
+
+		// the property name hasn't been stored at all
+		assertNull(auth.getProperty(propertyName, false));
+
+		// now the property name, and pointer to ssm, are stored, but ssm has no value
+		System.setProperty(propertyName, "ssm::"+ssmKey);
+
+		assertNull(auth.getProperty(propertyName, false));
 	}
 
 	@Test
