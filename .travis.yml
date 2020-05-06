@@ -24,9 +24,13 @@ jobs:
         - mvn clean test
     - stage: deploy-scipooldev
       script:
+        - chmod +x ./pomSnapshotToGitHash.sh
+        - ./pomSnapshotToGitHash.sh
         - mvn clean package
         - eb deploy synapse-login-scipooldev --profile default --region us-east-1 --verbose
     - stage: deploy-scipoolprod
       script:
+        - chmod +x ./pomSnapshotToLastGitTag.sh
+        - ./pomSnapshotToLastGitTag.sh
         - mvn clean package
         - eb deploy synapse-login-scipoolprod --profile default --region us-east-1 --verbose

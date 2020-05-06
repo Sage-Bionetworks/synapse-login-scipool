@@ -7,4 +7,4 @@ global:
   application_name: synapse-login
   workspace_type: Application
 deploy:
-  artifact: target/SynapseAWSConsoleLogin-1.0.war
+  artifact: target/SynapseAWSConsoleLogin.war

@@ -120,6 +120,7 @@
 
 	<build>
 		<outputDirectory>target/${project.artifactId}/WEB-INF/classes</outputDirectory>
+		<finalName>${artifactId}</finalName>
 
 		<plugins>
 			<plugin>
