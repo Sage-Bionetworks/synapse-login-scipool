@@ -397,7 +397,7 @@ public class Auth extends HttpServlet {
 				}
 			}
 			if (missing(result)) {
-				if (required) throw new RuntimeException("Cannot find value in SSM for parameter name"+ssmParameterName);
+				if (required) throw new RuntimeException("Cannot find value in SSM for parameter name: "+ssmParameterName);
 			}
 		}
 		return result;
