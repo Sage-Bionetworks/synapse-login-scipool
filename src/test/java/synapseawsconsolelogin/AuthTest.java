@@ -110,6 +110,7 @@ public class AuthTest {
 		Assume.assumeNotNull(credentials, credentials.getAWSAccessKeyId(), credentials.getAWSSecretKey());
 		
 		String propertyName = UUID.randomUUID().toString();
+		String ssmKey = UUID.randomUUID().toString();
 		String propertyValue = UUID.randomUUID().toString();
 		
 		Auth auth = new Auth();
@@ -117,12 +118,14 @@ public class AuthTest {
 		// the property has NOT been stored yet
 		assertNull(auth.getProperty(propertyName, false));
 		
+		System.setProperty(propertyName, "ssm::"+ssmKey);
+		
 		// now let's store the property in SSM
 		try {
 			AWSSimpleSystemsManagement ssmClient = AWSSimpleSystemsManagementClientBuilder.defaultClient();
 			
 			PutParameterRequest putParameterRequest = new PutParameterRequest();
-			putParameterRequest.setName(propertyName);
+			putParameterRequest.setName(ssmKey);
 			putParameterRequest.setValue(propertyValue);
 			putParameterRequest.setType(ParameterType.SecureString);
 			ssmClient.putParameter(putParameterRequest);
@@ -133,6 +136,31 @@ public class AuthTest {
 		
 		// verify that the property is now available
 		assertEquals(propertyValue, auth.getProperty(propertyName, false));
+	}
+		
+	@Test
+	public void testGetSSMParameterMissingValue() {
+		// we only want to run this test if we can connect to AWS
+		AWSCredentials credentials = null;
+		try {
+			credentials = DefaultAWSCredentialsProviderChain.getInstance().getCredentials();
+		} catch (SdkClientException e) {
+			Assume.assumeNoException(e);
+		}
+		Assume.assumeNotNull(credentials, credentials.getAWSAccessKeyId(), credentials.getAWSSecretKey());
+
+		String propertyName = UUID.randomUUID().toString();
+		String ssmKey = UUID.randomUUID().toString();
+
+		Auth auth = new Auth();
+
+		// the property name hasn't been stored at all
+		assertNull(auth.getProperty(propertyName, false));
+
+		// now the property name, and pointer to ssm, are stored, but ssm has no value
+		System.setProperty(propertyName, "ssm::"+ssmKey);
+
+		assertNull(auth.getProperty(propertyName, false));
 	}
 
 	@Test
