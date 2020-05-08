@@ -77,11 +77,13 @@ public class Auth extends HttpServlet {
 	static final String PROPERTIES_FILENAME_PARAMETER = "PROPERTIES_FILENAME";
 	private static final int SESSION_TIMEOUT_SECONDS_DEFAULT = 43200;
 	private static final String TAG_PREFIX = "synapse_";
-	
+	private static final String SSM_RESERVED_PREFIX = "ssm::";
+		
 	private Map<String,String> teamToRoleMap;
 	private String sessionTimeoutSeconds;
 	private String awsRegion;
 	private Properties properties = null;
+	private Properties ssmParameterCache = null;
 	private String awsConsoleUrl;
 	
 	Map<String,String> getTeamToRoleMap() throws JSONException {
@@ -101,6 +103,8 @@ public class Auth extends HttpServlet {
 	}
 
 	public Auth() {
+		initProperties();
+		ssmParameterCache = new Properties();
 		String sessionTimeoutSecondsString=getProperty("SESSION_TIMEOUT_SECONDS", false);
 		if (sessionTimeoutSecondsString==null) {
 			sessionTimeoutSeconds = ""+SESSION_TIMEOUT_SECONDS_DEFAULT;
@@ -369,7 +373,7 @@ public class Auth extends HttpServlet {
 			}
 		}
 	}
-
+	
 	public String getProperty(String key) {
 		return getProperty(key, true);
 	}
@@ -379,32 +383,45 @@ public class Auth extends HttpServlet {
 	}
 
 	public String getProperty(String key, boolean required) {
-		initProperties();
-		{
-			String environmentVariable = System.getenv(key);
-			if (!missing(environmentVariable)) return environmentVariable;
+		if (missing(key)) {
+			throw new IllegalArgumentException("property name is required");
 		}
+		String result=null;
 		{
-			String commandlineOption = System.getProperty(key);
-			if (!missing(commandlineOption)) return commandlineOption;
+			result = System.getenv(key);
 		}
-		{
-			String embeddedProperty = properties.getProperty(key);
-			if (!missing(embeddedProperty)) return embeddedProperty;
+		if (missing(result)) {
+			result = System.getProperty(key);
 		}
-		{
-			String ssmParameter = getSSMParameter(key);
-			if (!missing(ssmParameter)) {
-				// looking this up is expensive, let's cache it for next time
-				properties.setProperty(key, ssmParameter);
-				return ssmParameter;
+		if (missing(result)) {
+			result = properties.getProperty(key);
+		}
+		if (missing(result)) {
+			if (required) throw new RuntimeException("Cannot find value for "+key);
+			return result;
+		}
+		// we have a value but it might be a pointer to SSM
+		if (result.startsWith(SSM_RESERVED_PREFIX)) {
+			String ssmParameterName = result.substring(SSM_RESERVED_PREFIX.length());
+			// look up is expensive, so first check the cache
+			result = ssmParameterCache.getProperty(ssmParameterName);
+			if (missing(result)) {
+				result = getSSMParameter(ssmParameterName);
+				if (!missing(result)) {
+					ssmParameterCache.setProperty(ssmParameterName, result);
+				}
+			}
+			if (missing(result)) {
+				if (required) throw new RuntimeException("Cannot find value in SSM for parameter name: "+ssmParameterName);
 			}
 		}
-		if (required) throw new RuntimeException("Cannot find value for "+key);
-		return null;
+		return result;
 	}
 	
 	private String getSSMParameter(String name) {
+		if (name.length()<1) {
+			throw new IllegalArgumentException("SSM parameter name cannot be empty.");
+		}
 		try {
 			DefaultAWSCredentialsProviderChain.getInstance().getCredentials();
 		} catch (SdkClientException e) {
