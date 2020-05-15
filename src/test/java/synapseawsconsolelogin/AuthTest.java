@@ -45,6 +45,7 @@ public class AuthTest {
 		System.setProperty("AWS_REGION", "us-east-1");
 		System.setProperty("USER_CLAIMS", "userid,user_name");
 		System.setProperty(Auth.PROPERTIES_FILENAME_PARAMETER, "test.properties");
+		System.setProperty(Auth.GIT_TAG_PROPERTY_KEY, "1.0");
 	}
 	
 	@After
@@ -53,6 +54,7 @@ public class AuthTest {
 		System.clearProperty("AWS_REGION");
 		System.clearProperty("USER_CLAIMS");
 		System.clearProperty(TEST_PROPERTY_NAME);
+		System.clearProperty(Auth.GIT_TAG_PROPERTY_KEY);
 	}
 	
 	@Test
@@ -94,12 +96,14 @@ public class AuthTest {
 
 	@Test
 	public void testGetMissingOptionalProperty() {
+		Assume.assumeTrue(System.getProperty("SKIP_AWS")==null);
 		Auth auth = new Auth();
 		assertNull(auth.getProperty("undefined-property", false));
 	}
 	
 	@Test
 	public void testGetSSMParameter() {
+		Assume.assumeTrue(System.getProperty("SKIP_AWS")==null);
 		// we only want to run this test if we can connect to AWS
 		AWSCredentials credentials = null;
 		try {
@@ -140,6 +144,8 @@ public class AuthTest {
 		
 	@Test
 	public void testGetSSMParameterMissingValue() {
+		Assume.assumeTrue(System.getProperty("SKIP_AWS")==null);
+
 		// we only want to run this test if we can connect to AWS
 		AWSCredentials credentials = null;
 		try {
@@ -185,6 +191,23 @@ public class AuthTest {
 				 "&Issuer=https%3Awww.foo.com&Destination=https%3A%2F%2Fus-east-1.console.aws.amazon.com%2Fservicecatalog%2Fhome%3Fregion%3Dus-east-1%23%2Fproducts";
 		
 		assertEquals(expected, actual);
+	}
+
+	@Test
+	public void testInitAppVersionTag() {
+		Auth auth = new Auth();
+		String version = auth.getAppVersion();
+		assertEquals(System.getProperty(Auth.GIT_TAG_PROPERTY_KEY), version);
+	}
+
+	@Test
+	public void testInitAppVersionNoTag() {
+		System.setProperty(Auth.GIT_TAG_PROPERTY_KEY, "");
+		System.setProperty(Auth.GIT_COMMIT_ID_ABBREV_KEY, "abcdef");
+		System.setProperty(Auth.GIT_COMMIT_TIME_KEY, "20200201-11:55");
+		Auth auth = new Auth();
+		String version = auth.getAppVersion();
+		assertEquals(String.format("{}-{}", "20200201-11:55", "abcdef"), version);
 	}
 
 }

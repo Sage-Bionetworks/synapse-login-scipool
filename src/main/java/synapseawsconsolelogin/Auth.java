@@ -2,11 +2,7 @@
 package synapseawsconsolelogin;
 
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.PrintStream;
+import java.io.*;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLConnection;
@@ -63,6 +59,7 @@ public class Auth extends HttpServlet {
 	private static final String TOKEN_URL = "https://repo-prod.prod.sagebase.org/auth/v1/oauth2/token";
 	private static final String REDIRECT_URI = "/synapse";
 	private static final String HEALTH_URI = "/health";
+	public static final String VERSION_URI = "/version";
 	private static final String AWS_CONSOLE_URL_TEMPLATE = "https://%1$s.console.aws.amazon.com/servicecatalog/home?region=%1$s#/products";
 	private static final String AWS_SIGN_IN_URL = "https://signin.aws.amazon.com/federation";
 	private static final String USER_CLAIMS_DEFAULT="userid";
@@ -71,13 +68,20 @@ public class Auth extends HttpServlet {
 	static final String PROPERTIES_FILENAME_PARAMETER = "PROPERTIES_FILENAME";
 	private static final int SESSION_TIMEOUT_SECONDS_DEFAULT = 43200;
 	private static final String SSM_RESERVED_PREFIX = "ssm::";
-		
+
+	public static final String GIT_PROPERTIES_FILENAME = "git.properties";
+	public static final String GIT_TAG_PROPERTY_KEY = "git.closest.tag.name";
+	public static final String GIT_COMMIT_ID_ABBREV_KEY = "git.commit.id.abbrev";
+	public static final String GIT_COMMIT_TIME_KEY = "git.commit.time";
+
+
 	private Map<String,String> teamToRoleMap;
 	private String sessionTimeoutSeconds;
 	private String awsRegion;
 	private Properties properties = null;
 	private Properties ssmParameterCache = null;
 	private String awsConsoleUrl;
+	private String appVersion = null;
 	
 	Map<String,String> getTeamToRoleMap() throws JSONException {
 		String jsonString = getProperty("TEAM_TO_ROLE_ARN_MAP");
@@ -97,6 +101,7 @@ public class Auth extends HttpServlet {
 
 	public Auth() {
 		initProperties();
+		appVersion = initAppVersion();
 		ssmParameterCache = new Properties();
 		String sessionTimeoutSecondsString=getProperty("SESSION_TIMEOUT_SECONDS", false);
 		if (sessionTimeoutSecondsString==null) {
@@ -325,6 +330,15 @@ public class Auth extends HttpServlet {
 			resp.setStatus(302);
 		}	else if (uri.equals(HEALTH_URI)) {
 			resp.setStatus(200);
+		} else if (uri.equals(VERSION_URI)) {
+			resp.setContentType("application/json");
+			resp.setCharacterEncoding("UTF-8");
+			resp.setStatus(200);
+			JSONObject o = new JSONObject();
+			o.put("version", appVersion);
+			PrintWriter out = resp.getWriter();
+			out.print(o.toString());
+			out.flush();
 		} else {
 			throw new RuntimeException("Unexpected URI "+req.getRequestURI());
 		}
@@ -332,8 +346,7 @@ public class Auth extends HttpServlet {
 	
 	public void initProperties() {
 		if (properties!=null) return;
-		properties = new Properties();
-		
+
 		String propertyFileName = System.getenv(PROPERTIES_FILENAME_PARAMETER);
 		if (StringUtils.isEmpty(propertyFileName)) {
 			propertyFileName = System.getProperty(PROPERTIES_FILENAME_PARAMETER);
@@ -341,13 +354,18 @@ public class Auth extends HttpServlet {
 		}
 		if (StringUtils.isEmpty(propertyFileName)) {
 			propertyFileName = "global.properties";
-			
 		}
-		
+		properties = loadProperties(propertyFileName);
+		Properties gitProps = loadProperties(GIT_PROPERTIES_FILENAME);
+		addProperties(properties, gitProps);
+	}
+
+	private Properties loadProperties(String propertyFileName) {
+		Properties props = new Properties();
 		InputStream is = null;
 		try {
 			is = Auth.class.getClassLoader().getResourceAsStream(propertyFileName);
-			if (is!=null) properties.load(is);
+			if (is!=null) props.load(is);
 		} catch (IOException e) {
 			logger.log(Level.INFO, propertyFileName+" does not exist.");
 		} finally {
@@ -357,8 +375,15 @@ public class Auth extends HttpServlet {
 				throw new RuntimeException(e);
 			}
 		}
+		return props;
 	}
-	
+
+	public void addProperties(Properties properties, Properties toAdd) {
+		for (String k: toAdd.stringPropertyNames()) {
+			properties.setProperty(k, toAdd.getProperty(k));
+		}
+	}
+
 	public String getProperty(String key) {
 		return getProperty(key, true);
 	}
@@ -422,6 +447,20 @@ public class Auth extends HttpServlet {
 		} catch (AmazonClientException e) {
 			return null;
 		}
+	}
+
+	public String initAppVersion() {
+		String version;
+		if (! getProperty(GIT_TAG_PROPERTY_KEY, false).isEmpty()) {
+			version = getProperty(GIT_TAG_PROPERTY_KEY);
+		} else {
+			version = String.format("{}-{}", getProperty(GIT_COMMIT_TIME_KEY), getProperty(GIT_COMMIT_ID_ABBREV_KEY));
+		}
+		return version;
+	}
+
+	public String getAppVersion() {
+		return appVersion;
 	}
 
 }
