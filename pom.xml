@@ -6,7 +6,7 @@
 	<groupId>SynapseAWSConsoleLogin</groupId>
 	<artifactId>SynapseAWSConsoleLogin</artifactId>
 	<packaging>war</packaging>
-	<version>1.0</version>
+	<version>${git.commit.time}.${git.commit.id.abbrev}</version>
 	<name>SynapseAWSConsoleLogin Maven Webapp</name>
 	<url>http://maven.apache.org</url>
 
@@ -120,7 +120,17 @@
 
 	<build>
 		<outputDirectory>target/${project.artifactId}/WEB-INF/classes</outputDirectory>
-
+<!--
+		<resources>
+			<resource>
+				<directory>src/main/resources</directory>
+				<filtering>true</filtering>
+				<includes>
+					<include>**/version-info.properties</include>
+				</includes>
+			</resource>
+		</resources>
+-->
 		<plugins>
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
@@ -152,6 +162,31 @@
 				<groupId>com.google.cloud.tools</groupId>
 				<artifactId>appengine-maven-plugin</artifactId>
 				<version>${appengine-maven-plugin-version}</version>
+			</plugin>
+			<plugin>
+				<groupId>pl.project13.maven</groupId>
+				<artifactId>git-commit-id-plugin</artifactId>
+				<version>4.0.0</version>
+				<executions>
+					<execution>
+						<id>get-the-git-infos</id>
+						<goals>
+							<goal>revision</goal>
+						</goals>
+						<phase>initialize</phase>
+					</execution>
+				</executions>
+				<configuration>
+					<dateFormat>yyyyMMdd-HHmmss</dateFormat>
+					<generateGitPropertiesFile>true</generateGitPropertiesFile>
+					<generateGitPropertiesFilename>${project.build.outputDirectory}/git.properties</generateGitPropertiesFilename>
+					<includeOnlyProperties>
+						<includeOnlyProperty>^git.commit.id.abbrev$</includeOnlyProperty>
+						<includeOnlyProperty>^git.closest.tag.name$</includeOnlyProperty>
+						<includeOnlyProperty>^git.commit.time$</includeOnlyProperty>
+					</includeOnlyProperties>
+					<commitIdGenerationMode>full</commitIdGenerationMode>
+				</configuration>
 			</plugin>
 		</plugins>
 
