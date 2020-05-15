@@ -120,6 +120,7 @@
 
 	<build>
 		<outputDirectory>target/${project.artifactId}/WEB-INF/classes</outputDirectory>
+		<finalName>${artifactId}</finalName>
 <!--
 		<resources>
 			<resource>
@@ -177,7 +178,7 @@
 					</execution>
 				</executions>
 				<configuration>
-					<dateFormat>yyyyMMdd-HHmmss</dateFormat>
+					<dateFormat>yyyyMMdd-HHmm</dateFormat>
 					<generateGitPropertiesFile>true</generateGitPropertiesFile>
 					<generateGitPropertiesFilename>${project.build.outputDirectory}/git.properties</generateGitPropertiesFilename>
 					<includeOnlyProperties>
