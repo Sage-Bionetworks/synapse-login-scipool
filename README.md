@@ -44,7 +44,7 @@ iterating through the team/role list in the order given.
 The `SESSION_TAG_CLAIMS` config is a comma separated list of claims from the list of
 available claims, given here:
 https://rest-docs.synapse.org/rest/org/sagebionetworks/repo/model/oauth/OIDCClaimName.html
-used to define tags in the AWS session.  The tags are names `synapse_`<claim_name>, where <claim_name> is the name of the claim given in the config file.
+used to define tags in the AWS session.  The tags are names `synapse-`<claim name>, where <claim name> is the name of the claim given in the config file.
 
 The `SESSION_NAME_CLAIMS` config is also a comma separated list of claims, but used to define the session name, as a colon delimited list of claim values. For example: setting `SESSION_NAME_CLAIMS=userid,email` will display
 `ServiceCatalogEndusers/1234567:joe.smith@gmail.com` in AWS. 
