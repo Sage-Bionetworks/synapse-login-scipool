@@ -76,7 +76,7 @@ public class Auth extends HttpServlet {
             "?Action=getSigninToken&SessionDuration=%1$s&SessionType=json&Session=%2$s";
 	static final String PROPERTIES_FILENAME_PARAMETER = "PROPERTIES_FILENAME";
 	private static final int SESSION_TIMEOUT_SECONDS_DEFAULT = 43200;
-	private static final String TAG_PREFIX = "synapse_";
+	private static final String TAG_PREFIX = "synapse-";
 	private static final String SSM_RESERVED_PREFIX = "ssm::";
 		
 	private Map<String,String> teamToRoleMap;
@@ -318,7 +318,6 @@ public class Auth extends HttpServlet {
 			assumeRoleRequest.setRoleSessionName(awsSessionName.toString());
 			AWSSecurityTokenService stsClient = AWSSecurityTokenServiceClientBuilder.standard()
 					.withRegion(Regions.fromName(awsRegion)).build();
-			//assumeRoleRequest.setDurationSeconds(durationSeconds);
 			Collection<Tag> tags = new ArrayList<Tag>();
 			tags.add(new Tag().withKey("foo").withValue("bar"));
 			assumeRoleRequest.setTags(tags);
