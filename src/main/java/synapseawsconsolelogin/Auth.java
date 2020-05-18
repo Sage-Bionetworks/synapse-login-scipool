@@ -61,6 +61,7 @@ import io.jsonwebtoken.Jwts;
 public class Auth extends HttpServlet {
 	private static Logger logger = Logger.getLogger("Auth");
 
+	private static final String TEAM_CLAIM_NAME = "team";
 	private static final String CLAIMS_TEMPLATE = "{\"team\":{\"values\":[\"%1$s\"]},%2$s}";
 	private static final String CLAIM_TEMPLATE="\"%1$s\":{\"essential\":true}";
 	private static final String TOKEN_URL = "https://repo-prod.prod.sagebase.org/auth/v1/oauth2/token";
@@ -122,20 +123,21 @@ public class Auth extends HttpServlet {
 		return Arrays.asList(propertyValue.split(","));
 	}
 
-	public Set<String> getSessionClaimNames() {
-		return new TreeSet<String>(getCommaSeparatedPropertyAsList(SESSION_NAME_CLAIMS_PROPERTY_NAME, SESSION_CLAIM_NAMES_DEFAULT));
+	public List<String> getSessionClaimNames() {
+		return getCommaSeparatedPropertyAsList(SESSION_NAME_CLAIMS_PROPERTY_NAME, SESSION_CLAIM_NAMES_DEFAULT);
 	}
 
-	public Set<String> getTagClaimNames() {
-		return new TreeSet<String>(getCommaSeparatedPropertyAsList(SESSION_TAG_CLAIMS_PROPERTY_NAME, SESSION_TAG_CLAIMS_DEFAULT));
+	public List<String> getTagClaimNames() {
+		return getCommaSeparatedPropertyAsList(SESSION_TAG_CLAIMS_PROPERTY_NAME, SESSION_TAG_CLAIMS_DEFAULT);
 	}
 
 	public String getAuthorizeUrl() {
-		Set<String> allClaims = getSessionClaimNames();
+		Set<String> allClaims = new TreeSet<String>(getSessionClaimNames());
 		allClaims.addAll(getTagClaimNames());
 		StringBuilder sb = new StringBuilder();
 		boolean first=true;
 		for (String claimName : allClaims) {
+			if (claimName.equals(TEAM_CLAIM_NAME)) continue;
 			if (first) first=false; else sb.append(",");
 			sb.append(String.format(CLAIM_TEMPLATE, claimName));
 		}
@@ -242,6 +244,39 @@ public class Auth extends HttpServlet {
 		String unsignedToken = pieces[0]+"."+pieces[1]+".";
 		return Jwts.parser().parseClaimsJwt(unsignedToken);
 	}
+	
+	public AssumeRoleRequest createAssumeRoleRequest(Claims claims, String roleArn, String selectedTeam) {
+		// here we collect all the user information to be added to the session
+		Map<String,String> sessionTags = new HashMap<String,String>();
+		
+		for (String claimName: getTagClaimNames()) {
+			Object claimValue = claims.get(claimName);
+			if (claimValue!=null) {
+				sessionTags.put(TAG_PREFIX+claimName, claimValue.toString());
+			}
+		}
+		sessionTags.put(TAG_PREFIX+TEAM_CLAIM_NAME, selectedTeam);
+		
+		StringBuilder awsSessionName = new StringBuilder();
+		boolean first=true;
+		for (String claimName : getSessionClaimNames()) {
+			String claimValue = claims.get(claimName, String.class);
+			if (StringUtils.isEmpty(claimValue)) continue;
+			if (first) first=false; else awsSessionName.append(":");
+			awsSessionName.append(claimValue);
+		}
+
+		// get STS token
+		AssumeRoleRequest assumeRoleRequest = new AssumeRoleRequest();
+		assumeRoleRequest.setRoleArn(roleArn);
+		assumeRoleRequest.setRoleSessionName(awsSessionName.toString());
+		Collection<Tag> tags = new ArrayList<Tag>();
+		for (String tagName: sessionTags.keySet()) {
+			tags.add(new Tag().withKey(tagName).withValue(sessionTags.get(tagName)));				
+		}
+		assumeRoleRequest.setTags(tags);
+		return assumeRoleRequest;
+	}
 		
 	private void doGetIntern(HttpServletRequest req, HttpServletResponse resp)
 				throws Exception {
@@ -265,10 +300,7 @@ public class Auth extends HttpServlet {
 			// parse ID Token
 			Jwt<Header,Claims> jwt = parseJWT(idToken.getToken());
 			Claims claims = jwt.getBody();
-			List<String> teamIds = claims.get("team", List.class);
-			
-			// here we collect all the user information to be added to the session
-			Map<String,String> sessionTags = new HashMap<String,String>();
+			List<String> teamIds = claims.get(TEAM_CLAIM_NAME, List.class);
 			
 			String selectedTeam = null;
 			String roleArn = null;
@@ -279,14 +311,7 @@ public class Auth extends HttpServlet {
 					break;
 				}
 			}
-			sessionTags.put(TAG_PREFIX+"team", selectedTeam);
-			for (String claimName: getTagClaimNames()) {
-				Object claimValue = claims.get(claimName);
-				if (claimValue!=null) {
-					sessionTags.put(TAG_PREFIX+claimName, claimValue.toString());
-				}
-			}
-			
+
 			if (roleArn==null) {
 				resp.setContentType("text/html");
 				try (ServletOutputStream os=resp.getOutputStream()) {
@@ -303,24 +328,11 @@ public class Auth extends HttpServlet {
 				return;
 			}
 
-			StringBuilder awsSessionName = new StringBuilder();
-			boolean first=true;
-			for (String claimName : getSessionClaimNames()) {
-				String claimValue = claims.get(claimName, String.class);
-				if (StringUtils.isEmpty(claimValue)) continue;
-				if (first) first=false; else awsSessionName.append(":");
-				awsSessionName.append(claimValue);
-			}
-
-			// get STS token
-			AssumeRoleRequest assumeRoleRequest = new AssumeRoleRequest();
-			assumeRoleRequest.setRoleArn(roleArn);
-			assumeRoleRequest.setRoleSessionName(awsSessionName.toString());
 			AWSSecurityTokenService stsClient = AWSSecurityTokenServiceClientBuilder.standard()
 					.withRegion(Regions.fromName(awsRegion)).build();
-			Collection<Tag> tags = new ArrayList<Tag>();
-			tags.add(new Tag().withKey("foo").withValue("bar"));
-			assumeRoleRequest.setTags(tags);
+			
+			AssumeRoleRequest assumeRoleRequest = createAssumeRoleRequest(claims, roleArn, selectedTeam);
+			
 			AssumeRoleResult assumeRoleResult = stsClient.assumeRole(assumeRoleRequest);
 			Credentials credentials = assumeRoleResult.getCredentials();
 			// redirect to AWS login
