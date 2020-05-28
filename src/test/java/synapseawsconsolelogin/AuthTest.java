@@ -2,9 +2,12 @@ package synapseawsconsolelogin;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 import static org.mockito.Matchers.anyString;
 import static org.mockito.Mockito.when;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -22,11 +25,18 @@ import com.amazonaws.AmazonClientException;
 import com.amazonaws.SdkClientException;
 import com.amazonaws.auth.AWSCredentials;
 import com.amazonaws.auth.DefaultAWSCredentialsProviderChain;
+import com.amazonaws.services.securitytoken.model.AssumeRoleRequest;
 import com.amazonaws.services.securitytoken.model.Credentials;
+import com.amazonaws.services.securitytoken.model.Tag;
 import com.amazonaws.services.simplesystemsmanagement.AWSSimpleSystemsManagement;
 import com.amazonaws.services.simplesystemsmanagement.AWSSimpleSystemsManagementClientBuilder;
 import com.amazonaws.services.simplesystemsmanagement.model.ParameterType;
 import com.amazonaws.services.simplesystemsmanagement.model.PutParameterRequest;
+import com.google.appengine.repackaged.com.google.common.collect.ImmutableList;
+
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.impl.DefaultClaims;
+
 
 @RunWith(MockitoJUnitRunner.class)
 public class AuthTest {
@@ -43,7 +53,8 @@ public class AuthTest {
 	public void before() {
 		System.setProperty("TEAM_TO_ROLE_ARN_MAP","[{\"teamId\":\"123456\",\"roleArn\":\"arn:aws:iam::foo\"},{\"teamId\":\"345678\",\"roleArn\":\"arn:aws:iam::bar\"}]");
 		System.setProperty("AWS_REGION", "us-east-1");
-		System.setProperty("USER_CLAIMS", "userid,user_name");
+		System.setProperty("SESSION_NAME_CLAIMS", "userid");
+		System.setProperty("SESSION_TAG_CLAIMS", "userid,user_name,team");
 		System.setProperty(Auth.PROPERTIES_FILENAME_PARAMETER, "test.properties");
 	}
 	
@@ -51,7 +62,8 @@ public class AuthTest {
 	public void after() {
 		System.clearProperty("TEAM_TO_ROLE_ARN_MAP");
 		System.clearProperty("AWS_REGION");
-		System.clearProperty("USER_CLAIMS");
+		System.clearProperty("SESSION_TAG_CLAIMS");
+		System.clearProperty("SESSION_NAME_CLAIMS");
 		System.clearProperty(TEST_PROPERTY_NAME);
 	}
 	
@@ -70,7 +82,7 @@ public class AuthTest {
 	public void testGetAuthUrl() {
 		Auth auth = new Auth();
 		
-		String expected = "https://signin.synapse.org?response_type=code&client_id=%s&redirect_uri=%s&claims={\"id_token\":{\"team\":{\"values\":[\"123456\",\"345678\"]},\"userid\":{\"essential\":true},\"user_name\":{\"essential\":true}},\"userinfo\":{\"team\":{\"values\":[\"123456\",\"345678\"]},\"userid\":{\"essential\":true},\"user_name\":{\"essential\":true}}}";
+		String expected = "https://signin.synapse.org?response_type=code&client_id=%s&redirect_uri=%s&claims={\"id_token\":{\"team\":{\"values\":[\"123456\",\"345678\"]},\"user_name\":{\"essential\":true},\"userid\":{\"essential\":true}},\"userinfo\":{\"team\":{\"values\":[\"123456\",\"345678\"]},\"user_name\":{\"essential\":true},\"userid\":{\"essential\":true}}}";
 		String actual = auth.getAuthorizeUrl();
 		assertEquals(expected, actual);
 	}
@@ -189,6 +201,33 @@ public class AuthTest {
 				 "&Issuer=https%3Awww.foo.com&Destination=https%3A%2F%2Fus-east-1.console.aws.amazon.com%2Fservicecatalog%2Fhome%3Fregion%3Dus-east-1%23%2Fproducts";
 		
 		assertEquals(expected, actual);
+	}
+	
+	@Test 
+	public void testCreateAssumeRoleRequest() throws Exception {
+		String selectedTeam = "10101";
+		String roleArn = "arn:aws:iam::foo";
+		String userid = "1";
+
+		System.setProperty("SESSION_NAME_CLAIMS", "userid,user_name");
+		
+		Claims claims = new DefaultClaims();
+		Auth auth = new Auth();
+		claims.put("team", ImmutableList.of("888", "999"));
+		claims.put("userid", userid);
+		claims.put("user_name", "aname");
+
+		// method under test
+		AssumeRoleRequest request = auth.createAssumeRoleRequest(claims, roleArn, selectedTeam);
+		
+		assertEquals(roleArn, request.getRoleArn());
+		assertEquals("1:aname", request.getRoleSessionName());
+		
+		assertEquals(3, request.getTags().size());
+		assertTrue(request.getTags().contains((new Tag()).withKey("synapse-user_name").withValue("aname")));
+		assertTrue(request.getTags().contains((new Tag()).withKey("synapse-userid").withValue("1")));
+		assertTrue(request.getTags().contains((new Tag()).withKey("synapse-team").withValue("10101")));
+		
 	}
 
 	@Test
