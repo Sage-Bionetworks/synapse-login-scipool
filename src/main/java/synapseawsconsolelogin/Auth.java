@@ -407,12 +407,6 @@ public class Auth extends HttpServlet {
 		return props;
 	}
 
-	public void addProperties(Properties properties, Properties toAdd) {
-		for (String k: toAdd.stringPropertyNames()) {
-			properties.setProperty(k, toAdd.getProperty(k));
-		}
-	}
-
 	public String getProperty(String key) {
 		return getProperty(key, true);
 	}
