@@ -59,7 +59,7 @@ public class Auth extends HttpServlet {
 	private static final String TOKEN_URL = "https://repo-prod.prod.sagebase.org/auth/v1/oauth2/token";
 	private static final String REDIRECT_URI = "/synapse";
 	private static final String HEALTH_URI = "/health";
-	public static final String VERSION_URI = "/version";
+	public static final String ABOUT_URI = "/about";
 	private static final String AWS_CONSOLE_URL_TEMPLATE = "https://%1$s.console.aws.amazon.com/servicecatalog/home?region=%1$s#/products";
 	private static final String AWS_SIGN_IN_URL = "https://signin.aws.amazon.com/federation";
 	private static final String USER_CLAIMS_DEFAULT="userid";
@@ -70,8 +70,7 @@ public class Auth extends HttpServlet {
 	private static final String SSM_RESERVED_PREFIX = "ssm::";
 
 	public static final String GIT_PROPERTIES_FILENAME = "git.properties";
-	public static final String GIT_TAG_PROPERTY_KEY = "git.closest.tag.name";
-	public static final String GIT_COMMIT_ID_ABBREV_KEY = "git.commit.id.abbrev";
+	public static final String GIT_COMMIT_ID_DESCRIBE_SHORT_KEY = "git.commit.id.describe-short";
 	public static final String GIT_COMMIT_TIME_KEY = "git.commit.time";
 
 
@@ -330,7 +329,8 @@ public class Auth extends HttpServlet {
 			resp.setStatus(302);
 		}	else if (uri.equals(HEALTH_URI)) {
 			resp.setStatus(200);
-		} else if (uri.equals(VERSION_URI)) {
+		} else if (uri.equals(ABOUT_URI)) {
+			// Currently returns version
 			resp.setContentType("application/json");
 			resp.setCharacterEncoding("UTF-8");
 			resp.setStatus(200);
@@ -356,8 +356,6 @@ public class Auth extends HttpServlet {
 			propertyFileName = "global.properties";
 		}
 		properties = loadProperties(propertyFileName);
-		Properties gitProps = loadProperties(GIT_PROPERTIES_FILENAME);
-		addProperties(properties, gitProps);
 	}
 
 	private Properties loadProperties(String propertyFileName) {
@@ -450,12 +448,11 @@ public class Auth extends HttpServlet {
 	}
 
 	public String initAppVersion() {
-		String version;
-		if (! getProperty(GIT_TAG_PROPERTY_KEY, false).isEmpty()) {
-			version = getProperty(GIT_TAG_PROPERTY_KEY);
-		} else {
-			version = String.format("{}-{}", getProperty(GIT_COMMIT_TIME_KEY), getProperty(GIT_COMMIT_ID_ABBREV_KEY));
+		Properties gitProps = loadProperties(GIT_PROPERTIES_FILENAME);
+		if (! (gitProps.containsKey(GIT_COMMIT_TIME_KEY)) && (gitProps.containsKey(GIT_COMMIT_ID_DESCRIBE_SHORT_KEY))) {
+			throw new RuntimeException("Could not find Git properties in git.properties file!");
 		}
+		String version = String.format("%1$s-%2$s", gitProps.getProperty(GIT_COMMIT_TIME_KEY), gitProps.getProperty(GIT_COMMIT_ID_DESCRIBE_SHORT_KEY));
 		return version;
 	}
 

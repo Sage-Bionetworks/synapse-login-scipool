@@ -45,7 +45,6 @@ public class AuthTest {
 		System.setProperty("AWS_REGION", "us-east-1");
 		System.setProperty("USER_CLAIMS", "userid,user_name");
 		System.setProperty(Auth.PROPERTIES_FILENAME_PARAMETER, "test.properties");
-		System.setProperty(Auth.GIT_TAG_PROPERTY_KEY, "1.0");
 	}
 	
 	@After
@@ -54,7 +53,6 @@ public class AuthTest {
 		System.clearProperty("AWS_REGION");
 		System.clearProperty("USER_CLAIMS");
 		System.clearProperty(TEST_PROPERTY_NAME);
-		System.clearProperty(Auth.GIT_TAG_PROPERTY_KEY);
 	}
 	
 	@Test
@@ -194,20 +192,10 @@ public class AuthTest {
 	}
 
 	@Test
-	public void testInitAppVersionTag() {
+	public void testInitApp() {
 		Auth auth = new Auth();
 		String version = auth.getAppVersion();
-		assertEquals(System.getProperty(Auth.GIT_TAG_PROPERTY_KEY), version);
-	}
-
-	@Test
-	public void testInitAppVersionNoTag() {
-		System.setProperty(Auth.GIT_TAG_PROPERTY_KEY, "");
-		System.setProperty(Auth.GIT_COMMIT_ID_ABBREV_KEY, "abcdef");
-		System.setProperty(Auth.GIT_COMMIT_TIME_KEY, "20200201-11:55");
-		Auth auth = new Auth();
-		String version = auth.getAppVersion();
-		assertEquals(String.format("{}-{}", "20200201-11:55", "abcdef"), version);
+		assertEquals(String.format("%1$s-%2$s", "20200201-11:55", "6dc2fec"), version);
 	}
 
 }
