@@ -173,8 +173,7 @@
 					<generateGitPropertiesFile>true</generateGitPropertiesFile>
 					<generateGitPropertiesFilename>${project.build.outputDirectory}/git.properties</generateGitPropertiesFilename>
 					<includeOnlyProperties>
-						<includeOnlyProperty>^git.commit.id.abbrev$</includeOnlyProperty>
-						<includeOnlyProperty>^git.closest.tag.name$</includeOnlyProperty>
+						<includeOnlyProperty>^git.commit.id.describe-short$</includeOnlyProperty>
 						<includeOnlyProperty>^git.commit.time$</includeOnlyProperty>
 					</includeOnlyProperties>
 					<commitIdGenerationMode>full</commitIdGenerationMode>
