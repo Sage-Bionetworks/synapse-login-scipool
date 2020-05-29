@@ -166,15 +166,34 @@
 						</goals>
 						<phase>initialize</phase>
 					</execution>
+					<execution>
+						<id>validate-the-git-infos</id>
+						<goals>
+							<goal>validateRevision</goal>
+						</goals>
+						<phase>package</phase>
+					</execution>
 				</executions>
 				<configuration>
 					<dateFormat>yyyyMMdd-HHmm</dateFormat>
 					<generateGitPropertiesFile>true</generateGitPropertiesFile>
 					<generateGitPropertiesFilename>${project.build.outputDirectory}/git.properties</generateGitPropertiesFilename>
+					<gitDescribe>
+						<forceLongFormat>true</forceLongFormat>
+					</gitDescribe>
+					<validationProperties>
+						<validationProperty>
+							<name>validating git dirty</name>
+							<value>${git.dirty}</value>
+							<shouldMatchTo>false</shouldMatchTo>
+						</validationProperty>
+					</validationProperties>
 					<includeOnlyProperties>
 						<includeOnlyProperty>^git.commit.id.describe-short$</includeOnlyProperty>
 						<includeOnlyProperty>^git.commit.id.describe$</includeOnlyProperty>
 						<includeOnlyProperty>^git.commit.time$</includeOnlyProperty>
+						<includeOnlyProperty>^git.commit.id.abbrev$</includeOnlyProperty>
+						<includeOnlyProperty>^git.dirty$</includeOnlyProperty>
 					</includeOnlyProperties>
 					<commitIdGenerationMode>full</commitIdGenerationMode>
 				</configuration>
