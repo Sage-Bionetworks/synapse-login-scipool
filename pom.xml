@@ -189,10 +189,8 @@
 						</validationProperty>
 					</validationProperties>
 					<includeOnlyProperties>
-						<includeOnlyProperty>^git.commit.id.describe-short$</includeOnlyProperty>
 						<includeOnlyProperty>^git.commit.id.describe$</includeOnlyProperty>
 						<includeOnlyProperty>^git.commit.time$</includeOnlyProperty>
-						<includeOnlyProperty>^git.commit.id.abbrev$</includeOnlyProperty>
 						<includeOnlyProperty>^git.dirty$</includeOnlyProperty>
 					</includeOnlyProperties>
 					<commitIdGenerationMode>full</commitIdGenerationMode>

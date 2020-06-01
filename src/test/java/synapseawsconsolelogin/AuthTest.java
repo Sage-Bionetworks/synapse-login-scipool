@@ -234,7 +234,7 @@ public class AuthTest {
 	public void testInitApp() {
 		Auth auth = new Auth();
 		String version = auth.getAppVersion();
-		assertEquals(String.format("%1$s-%2$s", "20200201-11:55", "6dc2fec"), version);
+		assertEquals(String.format("%1$s-%2$s", "20200201-11:55", "0.1-3-g8eda288"), version);
 	}
 
 }

@@ -83,7 +83,7 @@ public class Auth extends HttpServlet {
 	private static final String SSM_RESERVED_PREFIX = "ssm::";
 
 	public static final String GIT_PROPERTIES_FILENAME = "git.properties";
-	public static final String GIT_COMMIT_ID_DESCRIBE_SHORT_KEY = "git.commit.id.describe-short";
+	public static final String GIT_COMMIT_ID_DESCRIBE_KEY = "git.commit.id.describe";
 	public static final String GIT_COMMIT_TIME_KEY = "git.commit.time";
 
 
@@ -474,10 +474,10 @@ public class Auth extends HttpServlet {
 
 	public String initAppVersion() {
 		Properties gitProps = loadProperties(GIT_PROPERTIES_FILENAME);
-		if (! (gitProps.containsKey(GIT_COMMIT_TIME_KEY)) && (gitProps.containsKey(GIT_COMMIT_ID_DESCRIBE_SHORT_KEY))) {
+		if (! (gitProps.containsKey(GIT_COMMIT_TIME_KEY) && gitProps.containsKey(GIT_COMMIT_ID_DESCRIBE_KEY))) {
 			throw new RuntimeException("Could not find Git properties in git.properties file!");
 		}
-		String version = String.format("%1$s-%2$s", gitProps.getProperty(GIT_COMMIT_TIME_KEY), gitProps.getProperty(GIT_COMMIT_ID_DESCRIBE_SHORT_KEY));
+		String version = String.format("%1$s-%2$s", gitProps.getProperty(GIT_COMMIT_TIME_KEY), gitProps.getProperty(GIT_COMMIT_ID_DESCRIBE_KEY));
 		return version;
 	}
 
