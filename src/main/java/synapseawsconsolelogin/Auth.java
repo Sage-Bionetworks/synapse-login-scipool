@@ -348,11 +348,12 @@ public class Auth extends HttpServlet {
 				}});
 			
 			resp.setHeader("Location", redirectURL);
-			resp.setStatus(302);
+			resp.setStatus(303);
 		}	else if (uri.equals(HEALTH_URI)) {
 			resp.setStatus(200);
 		} else {
-			throw new RuntimeException("Unexpected URI "+req.getRequestURI());
+			resp.setHeader("Location", "");
+			resp.setStatus(303);
 		}
 	}
 	
