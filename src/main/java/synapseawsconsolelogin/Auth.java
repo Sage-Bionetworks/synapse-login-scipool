@@ -371,7 +371,7 @@ public class Auth extends HttpServlet {
 			out.print(o.toString());
 			out.flush();
 		} else {
-			resp.setHeader("Location", "");
+			resp.setHeader("Location", getThisEndpoint(req));
 			resp.setStatus(303);
 		}
 	}
