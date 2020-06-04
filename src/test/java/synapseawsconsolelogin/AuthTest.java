@@ -106,12 +106,14 @@ public class AuthTest {
 
 	@Test
 	public void testGetMissingOptionalProperty() {
+		Assume.assumeTrue(System.getProperty("SKIP_AWS")==null);
 		Auth auth = new Auth();
 		assertNull(auth.getProperty("undefined-property", false));
 	}
 	
 	@Test
 	public void testGetSSMParameter() {
+		Assume.assumeTrue(System.getProperty("SKIP_AWS")==null);
 		// we only want to run this test if we can connect to AWS
 		AWSCredentials credentials = null;
 		try {
@@ -152,6 +154,8 @@ public class AuthTest {
 		
 	@Test
 	public void testGetSSMParameterMissingValue() {
+		Assume.assumeTrue(System.getProperty("SKIP_AWS")==null);
+
 		// we only want to run this test if we can connect to AWS
 		AWSCredentials credentials = null;
 		try {
@@ -224,6 +228,13 @@ public class AuthTest {
 		assertTrue(request.getTags().contains((new Tag()).withKey("synapse-userid").withValue("1")));
 		assertTrue(request.getTags().contains((new Tag()).withKey("synapse-team").withValue("10101")));
 		
+	}
+
+	@Test
+	public void testInitApp() {
+		Auth auth = new Auth();
+		String version = auth.getAppVersion();
+		assertEquals(String.format("%1$s-%2$s", "20200201-11:55", "0.1-3-g8eda288"), version);
 	}
 
 }

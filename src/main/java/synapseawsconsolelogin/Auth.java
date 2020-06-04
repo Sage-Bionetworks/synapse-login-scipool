@@ -1,6 +1,7 @@
 
 package synapseawsconsolelogin;
 
+import java.io.*;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
@@ -67,6 +68,7 @@ public class Auth extends HttpServlet {
 	private static final String TOKEN_URL = "https://repo-prod.prod.sagebase.org/auth/v1/oauth2/token";
 	private static final String REDIRECT_URI = "/synapse";
 	private static final String HEALTH_URI = "/health";
+	public static final String ABOUT_URI = "/about";
 	private static final String AWS_CONSOLE_URL_TEMPLATE = "https://%1$s.console.aws.amazon.com/servicecatalog/home?region=%1$s#/products";
 	private static final String AWS_SIGN_IN_URL = "https://signin.aws.amazon.com/federation";
 	private static final String SESSION_NAME_CLAIMS_PROPERTY_NAME = "SESSION_NAME_CLAIMS";
@@ -79,13 +81,19 @@ public class Auth extends HttpServlet {
 	private static final int SESSION_TIMEOUT_SECONDS_DEFAULT = 43200;
 	private static final String TAG_PREFIX = "synapse-";
 	private static final String SSM_RESERVED_PREFIX = "ssm::";
-		
+
+	public static final String GIT_PROPERTIES_FILENAME = "git.properties";
+	public static final String GIT_COMMIT_ID_DESCRIBE_KEY = "git.commit.id.describe";
+	public static final String GIT_COMMIT_TIME_KEY = "git.commit.time";
+
+
 	private Map<String,String> teamToRoleMap;
 	private String sessionTimeoutSeconds;
 	private String awsRegion;
 	private Properties properties = null;
 	private Properties ssmParameterCache = null;
 	private String awsConsoleUrl;
+	private String appVersion = null;
 	
 	Map<String,String> getTeamToRoleMap() throws JSONException {
 		String jsonString = getProperty("TEAM_TO_ROLE_ARN_MAP");
@@ -105,6 +113,7 @@ public class Auth extends HttpServlet {
 
 	public Auth() {
 		initProperties();
+		appVersion = initAppVersion();
 		ssmParameterCache = new Properties();
 		String sessionTimeoutSecondsString=getProperty("SESSION_TIMEOUT_SECONDS", false);
 		if (sessionTimeoutSecondsString==null) {
@@ -351,6 +360,16 @@ public class Auth extends HttpServlet {
 			resp.setStatus(303);
 		}	else if (uri.equals(HEALTH_URI)) {
 			resp.setStatus(200);
+		} else if (uri.equals(ABOUT_URI)) {
+			// Currently returns version
+			resp.setContentType("application/json");
+			resp.setCharacterEncoding("UTF-8");
+			resp.setStatus(200);
+			JSONObject o = new JSONObject();
+			o.put("version", appVersion);
+			PrintWriter out = resp.getWriter();
+			out.print(o.toString());
+			out.flush();
 		} else {
 			resp.setHeader("Location", "");
 			resp.setStatus(303);
@@ -359,8 +378,7 @@ public class Auth extends HttpServlet {
 	
 	public void initProperties() {
 		if (properties!=null) return;
-		properties = new Properties();
-		
+
 		String propertyFileName = System.getenv(PROPERTIES_FILENAME_PARAMETER);
 		if (StringUtils.isEmpty(propertyFileName)) {
 			propertyFileName = System.getProperty(PROPERTIES_FILENAME_PARAMETER);
@@ -368,13 +386,16 @@ public class Auth extends HttpServlet {
 		}
 		if (StringUtils.isEmpty(propertyFileName)) {
 			propertyFileName = "global.properties";
-			
 		}
-		
+		properties = loadProperties(propertyFileName);
+	}
+
+	private Properties loadProperties(String propertyFileName) {
+		Properties props = new Properties();
 		InputStream is = null;
 		try {
 			is = Auth.class.getClassLoader().getResourceAsStream(propertyFileName);
-			if (is!=null) properties.load(is);
+			if (is!=null) props.load(is);
 		} catch (IOException e) {
 			logger.log(Level.INFO, propertyFileName+" does not exist.");
 		} finally {
@@ -384,8 +405,9 @@ public class Auth extends HttpServlet {
 				throw new RuntimeException(e);
 			}
 		}
+		return props;
 	}
-	
+
 	public String getProperty(String key) {
 		return getProperty(key, true);
 	}
@@ -449,6 +471,19 @@ public class Auth extends HttpServlet {
 		} catch (AmazonClientException e) {
 			return null;
 		}
+	}
+
+	public String initAppVersion() {
+		Properties gitProps = loadProperties(GIT_PROPERTIES_FILENAME);
+		if (! (gitProps.containsKey(GIT_COMMIT_TIME_KEY) && gitProps.containsKey(GIT_COMMIT_ID_DESCRIBE_KEY))) {
+			throw new RuntimeException("Could not find Git properties in git.properties file!");
+		}
+		String version = String.format("%1$s-%2$s", gitProps.getProperty(GIT_COMMIT_TIME_KEY), gitProps.getProperty(GIT_COMMIT_ID_DESCRIBE_KEY));
+		return version;
+	}
+
+	public String getAppVersion() {
+		return appVersion;
 	}
 
 }
