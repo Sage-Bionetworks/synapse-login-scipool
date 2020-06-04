@@ -352,7 +352,7 @@ public class Auth extends HttpServlet {
 		}	else if (uri.equals(HEALTH_URI)) {
 			resp.setStatus(200);
 		} else {
-			resp.setHeader("Location", "");
+			resp.setHeader("Location", getThisEndpoint(req));
 			resp.setStatus(303);
 		}
 	}
