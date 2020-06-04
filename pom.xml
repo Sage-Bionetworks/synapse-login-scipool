@@ -19,6 +19,7 @@
 		<appengine.app.version>1</appengine.app.version>
 		<appengine.target.version>1.9.64</appengine.target.version>
 		<appengine-maven-plugin-version>1.3.2</appengine-maven-plugin-version>
+
 	</properties>
 
 	<dependencies>
@@ -119,7 +120,7 @@
 	</dependencies>
 
 	<build>
-		<outputDirectory>target/${project.artifactId}/WEB-INF/classes</outputDirectory>
+		<outputDirectory>target/${project.artifactId}-${project.version}/WEB-INF/classes</outputDirectory>
 
 		<plugins>
 			<plugin>
@@ -152,6 +153,48 @@
 				<groupId>com.google.cloud.tools</groupId>
 				<artifactId>appengine-maven-plugin</artifactId>
 				<version>${appengine-maven-plugin-version}</version>
+			</plugin>
+			<plugin>
+				<groupId>pl.project13.maven</groupId>
+				<artifactId>git-commit-id-plugin</artifactId>
+				<version>4.0.0</version>
+				<executions>
+					<execution>
+						<id>get-the-git-infos</id>
+						<goals>
+							<goal>revision</goal>
+						</goals>
+						<phase>initialize</phase>
+					</execution>
+					<execution>
+						<id>validate-the-git-infos</id>
+						<goals>
+							<goal>validateRevision</goal>
+						</goals>
+						<phase>package</phase>
+					</execution>
+				</executions>
+				<configuration>
+					<dateFormat>yyyyMMdd-HHmm</dateFormat>
+					<generateGitPropertiesFile>true</generateGitPropertiesFile>
+					<generateGitPropertiesFilename>${project.build.outputDirectory}/git.properties</generateGitPropertiesFilename>
+					<gitDescribe>
+						<forceLongFormat>true</forceLongFormat>
+					</gitDescribe>
+					<validationProperties>
+						<validationProperty>
+							<name>validating git dirty</name>
+							<value>${git.dirty}</value>
+							<shouldMatchTo>false</shouldMatchTo>
+						</validationProperty>
+					</validationProperties>
+					<includeOnlyProperties>
+						<includeOnlyProperty>^git.commit.id.describe$</includeOnlyProperty>
+						<includeOnlyProperty>^git.commit.time$</includeOnlyProperty>
+						<includeOnlyProperty>^git.dirty$</includeOnlyProperty>
+					</includeOnlyProperties>
+					<commitIdGenerationMode>full</commitIdGenerationMode>
+				</configuration>
 			</plugin>
 		</plugins>
 
