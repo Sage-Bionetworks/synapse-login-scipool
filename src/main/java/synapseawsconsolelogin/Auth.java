@@ -283,7 +283,7 @@ public class Auth extends HttpServlet {
 		for (String tagName: sessionTags.keySet()) {
 			tags.add(new Tag().withKey(tagName).withValue(sessionTags.get(tagName)));				
 		}
-		assumeRoleRequest.setTags(tags);
+		// assumeRoleRequest.setTags(tags); This is a temporary change to see if it solves SC-178
 		return assumeRoleRequest;
 	}
 		
