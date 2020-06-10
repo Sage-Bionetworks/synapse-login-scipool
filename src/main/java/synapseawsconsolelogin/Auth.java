@@ -1,12 +1,12 @@
 
 package synapseawsconsolelogin;
 
-import java.io.*;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.PrintStream;
+import java.io.PrintWriter;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLConnection;
@@ -34,6 +34,7 @@ import org.apache.commons.lang.StringUtils;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
+import org.scribe.exceptions.OAuthException;
 import org.scribe.model.OAuthConfig;
 import org.scribe.model.Token;
 import org.scribe.model.Verifier;
@@ -286,6 +287,16 @@ public class Auth extends HttpServlet {
 		assumeRoleRequest.setTags(tags);
 		return assumeRoleRequest;
 	}
+	
+	private void handleException(Exception e, HttpServletResponse resp) throws IOException {
+		resp.setStatus(500);
+		try (ServletOutputStream os=resp.getOutputStream()) {
+			os.println("<html><head/><body>");
+			os.println("<h3>An error has occurred:</h3>");
+			os.println(e.getMessage());
+			os.println("</body></html>");
+		}
+	}
 		
 	private void doGetIntern(HttpServletRequest req, HttpServletResponse resp)
 				throws Exception {
@@ -304,7 +315,14 @@ public class Auth extends HttpServlet {
 			service = (OAuth2Api.BasicOAuth2Service)(new OAuth2Api(getAuthorizeUrl(), TOKEN_URL)).
 					createService(new OAuthConfig(getClientIdSynapse(), getClientSecretSynapse(), getRedirectBackUrlSynapse(req), null, null, null));
 			String authorizationCode = req.getParameter("code");
-			Token idToken = service.getIdToken(null, new Verifier(authorizationCode));
+			Token idToken = null;
+			
+			try {
+				idToken = service.getIdToken(null, new Verifier(authorizationCode));
+			} catch (OAuthException e) {
+				handleException(e, resp);
+				return;
+			}
 			
 			// parse ID Token
 			Jwt<Header,Claims> jwt = parseJWT(idToken.getToken());

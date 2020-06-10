@@ -164,7 +164,21 @@ public class OAuth2Api extends DefaultApi20 {
 
 	    public Token getIdToken(Token requestToken, Verifier verifier) {
         	Response response = getTokenResponse(requestToken, verifier);
-	        return ((OAuth2Api)api).getIdTokenExtractor().extract(response.getBody());
+        	String responseBody = response.getBody();
+        	// the Synapse token endpoint returns 201
+        	if (response.getCode()>=400) {
+        		String reason = responseBody;
+        		try {
+        			JSONObject json = new JSONObject(responseBody);
+        			if (json.has("reason")) {
+        				reason = json.getString("reason");
+        			}
+        		} catch (JSONException e) {
+        			// 'reason' will default to the whole response body
+        		}
+        		throw new OAuthException(reason);
+        	}
+	        return ((OAuth2Api)api).getIdTokenExtractor().extract(responseBody);
 	    }
     }
 
