@@ -265,6 +265,7 @@ public class Auth extends HttpServlet {
 			}
 		}
 		sessionTags.put(TAG_PREFIX+TEAM_CLAIM_NAME, selectedTeam);
+		sessionTags.remove(TAG_PREFIX+TEAM_CLAIM_NAME); // temporary, to test the effect of the team tag on SC-178
 		
 		StringBuilder awsSessionName = new StringBuilder();
 		boolean first=true;
@@ -283,7 +284,7 @@ public class Auth extends HttpServlet {
 		for (String tagName: sessionTags.keySet()) {
 			tags.add(new Tag().withKey(tagName).withValue(sessionTags.get(tagName)));				
 		}
-		// assumeRoleRequest.setTags(tags); This is a temporary change to see if it solves SC-178
+		assumeRoleRequest.setTags(tags);
 		return assumeRoleRequest;
 	}
 		
