@@ -223,11 +223,11 @@ public class AuthTest {
 		assertEquals(roleArn, request.getRoleArn());
 		assertEquals("1:aname", request.getRoleSessionName());
 		
-// temporarily disabled
-//		assertEquals(3, request.getTags().size());
-//		assertTrue(request.getTags().contains((new Tag()).withKey("synapse-user_name").withValue("aname")));
-//		assertTrue(request.getTags().contains((new Tag()).withKey("synapse-userid").withValue("1")));
-//		assertTrue(request.getTags().contains((new Tag()).withKey("synapse-team").withValue("10101")));
+		//assertEquals(3, request.getTags().size()); // temporary change for SC-178 
+		assertEquals(2, request.getTags().size()); // temporary change for SC-178
+		assertTrue(request.getTags().contains((new Tag()).withKey("synapse-user_name").withValue("aname")));
+		assertTrue(request.getTags().contains((new Tag()).withKey("synapse-userid").withValue("1")));
+		//assertTrue(request.getTags().contains((new Tag()).withKey("synapse-team").withValue("10101")));// temporary change for SC-178 
 		
 	}
 
