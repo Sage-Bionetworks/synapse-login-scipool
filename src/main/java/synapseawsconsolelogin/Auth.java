@@ -261,11 +261,15 @@ public class Auth extends HttpServlet {
 		
 		for (String claimName: getTagClaimNames()) {
 			Object claimValue = claims.get(claimName);
-			if (claimValue!=null) {
-				sessionTags.put(TAG_PREFIX+claimName, claimValue.toString());
+			if (TEAM_CLAIM_NAME.equals(claimName)) {
+				// for this special claim name we put the selectedTeam rather than the claimValue, which is a list of teams
+				sessionTags.put(TAG_PREFIX+claimName, selectedTeam);
+			} else {
+				if (claimValue!=null) {
+					sessionTags.put(TAG_PREFIX+claimName, claimValue.toString());
+				}
 			}
 		}
-		sessionTags.put(TAG_PREFIX+TEAM_CLAIM_NAME, selectedTeam);
 		
 		StringBuilder awsSessionName = new StringBuilder();
 		boolean first=true;
