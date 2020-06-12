@@ -33,7 +33,8 @@ import org.scribe.utils.Preconditions;
 public class OAuth2Api extends DefaultApi20 {
 	private static String ACCESS_TOKEN_TAG = "access_token";
 	private static String ID_TOKEN_TAG = "id_token";
-	private static String ERROR_TAG = "error";
+    private static String ERROR_TAG = "reason";
+
 	
 	private String authorizationEndpoint;
 	private String accessTokenEndpoint;
@@ -70,7 +71,7 @@ public class OAuth2Api extends DefaultApi20 {
             }
         };
     }
-
+    
     public AccessTokenExtractor getIdTokenExtractor() {
         return new AccessTokenExtractor() {
             
@@ -164,21 +165,7 @@ public class OAuth2Api extends DefaultApi20 {
 
 	    public Token getIdToken(Token requestToken, Verifier verifier) {
         	Response response = getTokenResponse(requestToken, verifier);
-        	String responseBody = response.getBody();
-        	// the Synapse token endpoint returns 201
-        	if (response.getCode()>=400) {
-        		String reason = responseBody;
-        		try {
-        			JSONObject json = new JSONObject(responseBody);
-        			if (json.has("reason")) {
-        				reason = json.getString("reason");
-        			}
-        		} catch (JSONException e) {
-        			// 'reason' will default to the whole response body
-        		}
-        		throw new OAuthException(reason);
-        	}
-	        return ((OAuth2Api)api).getIdTokenExtractor().extract(responseBody);
+        	return ((OAuth2Api)api).getIdTokenExtractor().extract(response.getBody());
 	    }
     }
 
