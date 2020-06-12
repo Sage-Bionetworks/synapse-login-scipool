@@ -33,7 +33,8 @@ import org.scribe.utils.Preconditions;
 public class OAuth2Api extends DefaultApi20 {
 	private static String ACCESS_TOKEN_TAG = "access_token";
 	private static String ID_TOKEN_TAG = "id_token";
-	private static String ERROR_TAG = "error";
+	private static String ERROR_TAG = "reason";
+
 	
 	private String authorizationEndpoint;
 	private String accessTokenEndpoint;
@@ -164,7 +165,7 @@ public class OAuth2Api extends DefaultApi20 {
 
 	    public Token getIdToken(Token requestToken, Verifier verifier) {
         	Response response = getTokenResponse(requestToken, verifier);
-	        return ((OAuth2Api)api).getIdTokenExtractor().extract(response.getBody());
+        	return ((OAuth2Api)api).getIdTokenExtractor().extract(response.getBody());
 	    }
     }
 
