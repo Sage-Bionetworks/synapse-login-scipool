@@ -292,7 +292,7 @@ public class Auth extends HttpServlet {
 		return assumeRoleRequest;
 	}
 	
-	private void handleException(Exception e, HttpServletResponse resp) throws IOException {
+	private static void handleException(Exception e, HttpServletResponse resp) throws IOException {
 		resp.setStatus(500);
 		try (ServletOutputStream os=resp.getOutputStream()) {
 			os.println("<html><head/><body>");
