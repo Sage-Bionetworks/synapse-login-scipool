@@ -271,19 +271,37 @@ public class Auth extends HttpServlet {
 			}
 		}
 		
-		StringBuilder awsSessionName = new StringBuilder();
+		StringBuilder stringBuilder = new StringBuilder();
 		boolean first=true;
 		for (String claimName : getSessionClaimNames()) {
 			String claimValue = claims.get(claimName, String.class);
 			if (StringUtils.isEmpty(claimValue)) continue;
-			if (first) first=false; else awsSessionName.append(":");
-			awsSessionName.append(claimValue);
+			if (first) first=false; else stringBuilder.append(":");
+			stringBuilder.append(claimValue);
 		}
-
+		String awsSessionName = stringBuilder.toString();
+		
+		// ---------------------------------------------
+		// the following is purely for testing and should not be deployed to prod:
+		if (awsSessionName.equals("3320560")) { // this is the ID of a test Synapse account
+			// these are the metadata for one user who reproducibly failed to log in
+			awsSessionName = "372127";
+			sessionTags.clear();
+			sessionTags.put("synapse-company","Sage Bionetworks");
+			sessionTags.put("synapse-given_name","Larsson");
+			sessionTags.put("synapse-user_name","larssono");
+			sessionTags.put("synapse-sub","yPp2joewHf0ClLk2IWyTAQ"); // Note this is from prod.  The dev' value will be different
+			sessionTags.put("synapse-family_name","Omberg");
+			sessionTags.put("synapse-userid","372127");
+			sessionTags.put("synapse-team", "273957");
+		}
+		// end testing section
+		// ---------------------------------------------
+		
 		// get STS token
 		AssumeRoleRequest assumeRoleRequest = new AssumeRoleRequest();
 		assumeRoleRequest.setRoleArn(roleArn);
-		assumeRoleRequest.setRoleSessionName(awsSessionName.toString());
+		assumeRoleRequest.setRoleSessionName(awsSessionName);
 		Collection<Tag> tags = new ArrayList<Tag>();
 		for (String tagName: sessionTags.keySet()) {
 			tags.add(new Tag().withKey(tagName).withValue(sessionTags.get(tagName)));				
