@@ -274,7 +274,10 @@ public class Auth extends HttpServlet {
 			}
 		}
 		
-		// this is the fix for SC-178
+		// AWS has a bug in which, for certain combinations of tags, the redirect
+		// to the console login results in an error.  See issue SC-178.  The fix 
+		// is to ensure no particular combination of tags ever occurs more than once.
+		// We accomplish this by adding a tag which is a random UUID.
 		sessionTags.put(TAG_PREFIX+NONCE_TAG_NAME, UUID.randomUUID().toString());
 		
 		StringBuilder stringBuilder = new StringBuilder();
