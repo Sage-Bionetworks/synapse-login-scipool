@@ -11,6 +11,7 @@ import java.util.UUID;
 
 import javax.servlet.http.HttpServletRequest;
 
+import org.apache.commons.lang.StringUtils;
 import org.junit.After;
 import org.junit.Assume;
 import org.junit.Before;
@@ -221,11 +222,19 @@ public class AuthTest {
 		assertEquals(roleArn, request.getRoleArn());
 		assertEquals("1:aname", request.getRoleSessionName());
 		
-		assertEquals(3, request.getTags().size());
+		assertEquals(4, request.getTags().size());
 
 		assertTrue(request.getTags().contains((new Tag()).withKey("synapse-user_name").withValue("aname")));
 		assertTrue(request.getTags().contains((new Tag()).withKey("synapse-userid").withValue("1")));
 		assertTrue(request.getTags().contains((new Tag()).withKey("synapse-team").withValue("10101")));
+		
+		boolean containsNonceTag = false;
+		for (Tag tag : request.getTags()) {
+			if (tag.getKey().equals("synapse-nonce") && StringUtils.isNotEmpty(tag.getValue())) {
+				containsNonceTag = true;
+			}
+		}
+		assertTrue(containsNonceTag);
 		
 	}
 

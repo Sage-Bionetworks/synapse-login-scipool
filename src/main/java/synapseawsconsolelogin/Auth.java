@@ -22,6 +22,7 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.UUID;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -86,6 +87,8 @@ public class Auth extends HttpServlet {
 	public static final String GIT_PROPERTIES_FILENAME = "git.properties";
 	public static final String GIT_COMMIT_ID_DESCRIBE_KEY = "git.commit.id.describe";
 	public static final String GIT_COMMIT_TIME_KEY = "git.commit.time";
+	
+	private static final String NONCE_TAG_NAME = "nonce";
 
 
 	private Map<String,String> teamToRoleMap;
@@ -271,19 +274,26 @@ public class Auth extends HttpServlet {
 			}
 		}
 		
-		StringBuilder awsSessionName = new StringBuilder();
+		// AWS has a bug in which, for certain combinations of tags, the redirect
+		// to the console login results in an error.  See issue SC-178.  The fix 
+		// is to ensure no particular combination of tags ever occurs more than once.
+		// We accomplish this by adding a tag which is a random UUID.
+		sessionTags.put(TAG_PREFIX+NONCE_TAG_NAME, UUID.randomUUID().toString());
+		
+		StringBuilder stringBuilder = new StringBuilder();
 		boolean first=true;
 		for (String claimName : getSessionClaimNames()) {
 			String claimValue = claims.get(claimName, String.class);
 			if (StringUtils.isEmpty(claimValue)) continue;
-			if (first) first=false; else awsSessionName.append(":");
-			awsSessionName.append(claimValue);
+			if (first) first=false; else stringBuilder.append(":");
+			stringBuilder.append(claimValue);
 		}
-
+		String awsSessionName = stringBuilder.toString();
+		
 		// get STS token
 		AssumeRoleRequest assumeRoleRequest = new AssumeRoleRequest();
 		assumeRoleRequest.setRoleArn(roleArn);
-		assumeRoleRequest.setRoleSessionName(awsSessionName.toString());
+		assumeRoleRequest.setRoleSessionName(awsSessionName);
 		Collection<Tag> tags = new ArrayList<Tag>();
 		for (String tagName: sessionTags.keySet()) {
 			tags.add(new Tag().withKey(tagName).withValue(sessionTags.get(tagName)));				
