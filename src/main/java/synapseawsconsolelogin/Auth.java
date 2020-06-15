@@ -22,6 +22,7 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.UUID;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -86,6 +87,8 @@ public class Auth extends HttpServlet {
 	public static final String GIT_PROPERTIES_FILENAME = "git.properties";
 	public static final String GIT_COMMIT_ID_DESCRIBE_KEY = "git.commit.id.describe";
 	public static final String GIT_COMMIT_TIME_KEY = "git.commit.time";
+	
+	private static final String NONCE_TAG_NAME = "nonce";
 
 
 	private Map<String,String> teamToRoleMap;
@@ -270,6 +273,12 @@ public class Auth extends HttpServlet {
 				}
 			}
 		}
+		
+		// AWS has a bug in which, for certain combinations of tags, the redirect
+		// to the console login results in an error.  See issue SC-178.  The fix 
+		// is to ensure no particular combination of tags ever occurs more than once.
+		// We accomplish this by adding a tag which is a random UUID.
+		sessionTags.put(TAG_PREFIX+NONCE_TAG_NAME, UUID.randomUUID().toString());
 		
 		StringBuilder stringBuilder = new StringBuilder();
 		boolean first=true;
