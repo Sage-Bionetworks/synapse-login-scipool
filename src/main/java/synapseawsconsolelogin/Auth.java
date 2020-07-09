@@ -409,7 +409,7 @@ public class Auth extends HttpServlet {
 			out.print(o.toString());
 			out.flush();
 		} else if (uri.equals(SECTOR_IDENTIFIER_URI)) {
-			// Currently returns version
+			// returns a JSONArray containing all the redirect URIs under the sector identifier
 			resp.setContentType("application/json");
 			resp.setCharacterEncoding("UTF-8");
 			resp.setStatus(200);

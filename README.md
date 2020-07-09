@@ -51,7 +51,9 @@ The `SESSION_NAME_CLAIMS` config is also a comma separated list of claims, but u
 `ServiceCatalogEndusers/1234567:joe.smith@gmail.com` in AWS. 
 
 ### Redirect URIs
-The REDIRECT_URIS parameter is a comma separated list of OAuth redirect URIs, including both the redirect URI used by this application and the redirect URIs of any other OAuth clients in the Service Catalog system that share the paired pseudonymous identifiers with this application.  Specifically this application establishes the [sector identifier](https://openid.net/specs/openid-connect-registration-1_0.html#SectorIdentifierValidation) for all the OAuth clients in the system.  When registering as an OIDC client with Synapse, include `sector_identifier_uri=<this_host>/redirect_uris.json`.
+This application will host a static list of redirect URIs including those used by itself and those used by other Service Catalog components which authenticate using Synapse as an identity provider. The `REDIRECT_URIS` parameter is a comma separated list of OAuth redirect URIs and the list appears as a JSON Array at the URI, `/redirect_uris.json`.
+
+Technically this application establishes the [sector identifier](https://openid.net/specs/openid-connect-registration-1_0.html#SectorIdentifierValidation) for all the OAuth clients in the system, ensuring they all receive the same paired pseudonymous identifier for each Synapse user.  When registering as an OIDC client with Synapse, include `sector_identifier_uri=<this_host>/redirect_uris.json`.
 
 ## Building the app
 This is a java application which we build with standard [apache maven](https://maven.apache.org/what-is-maven.html)
