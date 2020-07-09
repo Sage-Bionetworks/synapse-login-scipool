@@ -6,8 +6,8 @@ cache:
   directories:
   - $HOME/.m2
 before_install:
-  - pyenv install 3.6
-  - pyenv global 3.6
+  - pyenv install 3.6.3
+  - pyenv global 3.6.3
 install:
   - wget https://github.com/Sage-Bionetworks/infra-utils/archive/master.zip -O /tmp/infra-utils.zip
   - unzip -j -n /tmp/infra-utils.zip -x "infra-utils-master/.gitignore" "infra-utils-master/LICENSE" "infra-utils-master/*.md" "infra-utils-master/aws/*"
