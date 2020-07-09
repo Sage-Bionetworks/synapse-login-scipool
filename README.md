@@ -50,8 +50,8 @@ used to define tags in the AWS session.  The tags are names `synapse-`<claim nam
 The `SESSION_NAME_CLAIMS` config is also a comma separated list of claims, but used to define the session name, as a colon delimited list of claim values. For example: setting `SESSION_NAME_CLAIMS=userid,email` will display
 `ServiceCatalogEndusers/1234567:joe.smith@gmail.com` in AWS. 
 
-### REDIRECT_URIS
-This is a comma separated list of OAuth redirect URIs, including both the redirect URI used by this app' and the redirect URIs of any other OAuth clients in the Service Catalog system that share the paired pseudonymous identifiers with this app'.  Specifically this app' establishes the [sector identifier](https://openid.net/specs/openid-connect-registration-1_0.html#SectorIdentifierValidation) for all the OAuth clients in the system.
+### Redirect URIs
+The REDIRECT_URIS parameter is a comma separated list of OAuth redirect URIs, including both the redirect URI used by this application and the redirect URIs of any other OAuth clients in the Service Catalog system that share the paired pseudonymous identifiers with this application.  Specifically this application establishes the [sector identifier](https://openid.net/specs/openid-connect-registration-1_0.html#SectorIdentifierValidation) for all the OAuth clients in the system.  When registering as an OIDC client with Synapse, include `sector_identifier_uri=<this_host>/redirect_uris.json`.
 
 ## Building the app
 This is a java application which we build with standard [apache maven](https://maven.apache.org/what-is-maven.html)
