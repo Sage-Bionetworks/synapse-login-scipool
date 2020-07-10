@@ -71,11 +71,13 @@ public class Auth extends HttpServlet {
 	private static final String REDIRECT_URI = "/synapse";
 	private static final String HEALTH_URI = "/health";
 	public static final String ABOUT_URI = "/about";
+	public static final String SECTOR_IDENTIFIER_URI  = "/redirect_uris.json";
 	private static final String AWS_CONSOLE_URL_TEMPLATE = "https://%1$s.console.aws.amazon.com/servicecatalog/home?region=%1$s#/products";
 	private static final String AWS_SIGN_IN_URL = "https://signin.aws.amazon.com/federation";
 	private static final String SESSION_NAME_CLAIMS_PROPERTY_NAME = "SESSION_NAME_CLAIMS";
 	private static final String SESSION_CLAIM_NAMES_DEFAULT="userid";
 	private static final String SESSION_TAG_CLAIMS_PROPERTY_NAME = "SESSION_TAG_CLAIMS";
+	private static final String REDIRECT_URIS_PROPERTY_NAME = "REDIRECT_URIS";
 	private static final String SESSION_TAG_CLAIMS_DEFAULT = "userid";
 	private static final String SIGNIN_TOKEN_URL_TEMPLATE = AWS_SIGN_IN_URL + 
             "?Action=getSigninToken&SessionDuration=%1$s&SessionType=json&Session=%2$s";
@@ -142,6 +144,10 @@ public class Auth extends HttpServlet {
 
 	public List<String> getTagClaimNames() {
 		return getCommaSeparatedPropertyAsList(SESSION_TAG_CLAIMS_PROPERTY_NAME, SESSION_TAG_CLAIMS_DEFAULT);
+	}
+
+	public List<String> getRedirectURIs(String defaultRedirectURI) {
+		return getCommaSeparatedPropertyAsList(REDIRECT_URIS_PROPERTY_NAME, defaultRedirectURI);
 	}
 
 	public String getAuthorizeUrl() {
@@ -390,7 +396,7 @@ public class Auth extends HttpServlet {
 			
 			resp.setHeader("Location", redirectURL);
 			resp.setStatus(303);
-		}	else if (uri.equals(HEALTH_URI)) {
+		} else if (uri.equals(HEALTH_URI)) {
 			resp.setStatus(200);
 		} else if (uri.equals(ABOUT_URI)) {
 			// Currently returns version
@@ -399,6 +405,18 @@ public class Auth extends HttpServlet {
 			resp.setStatus(200);
 			JSONObject o = new JSONObject();
 			o.put("version", appVersion);
+			PrintWriter out = resp.getWriter();
+			out.print(o.toString());
+			out.flush();
+		} else if (uri.equals(SECTOR_IDENTIFIER_URI)) {
+			// returns a JSONArray containing all the redirect URIs under the sector identifier
+			resp.setContentType("application/json");
+			resp.setCharacterEncoding("UTF-8");
+			resp.setStatus(200);
+			JSONArray o = new JSONArray();
+			for (String s : getRedirectURIs(getRedirectBackUrlSynapse(req))) {
+				o.put(s);
+			}
 			PrintWriter out = resp.getWriter();
 			out.print(o.toString());
 			out.flush();
