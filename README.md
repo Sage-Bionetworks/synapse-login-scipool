@@ -17,6 +17,7 @@ AWS_REGION=us-east-1
 SESSION_TIMEOUT_SECONDS=43200
 SESSION_NAME_CLAIMS=userid
 SESSION_TAG_CLAIMS=sub,userid,user_name
+REDIRECT_URIS=https://.....,https://....
 ```
 
 The name of the properties file, `global.properties` can be overridden by setting an environment variable or 
@@ -49,10 +50,15 @@ used to define tags in the AWS session.  The tags are names `synapse-`<claim nam
 The `SESSION_NAME_CLAIMS` config is also a comma separated list of claims, but used to define the session name, as a colon delimited list of claim values. For example: setting `SESSION_NAME_CLAIMS=userid,email` will display
 `ServiceCatalogEndusers/1234567:joe.smith@gmail.com` in AWS. 
 
+### Redirect URIs
+This application will host a static list of redirect URIs including those used by itself and those used by other Service Catalog components which authenticate using Synapse as an identity provider. The `REDIRECT_URIS` parameter is a comma separated list of OAuth redirect URIs and the list appears as a JSON Array at the URI, `/redirect_uris.json`.
+
+Technically this application establishes the [sector identifier](https://openid.net/specs/openid-connect-registration-1_0.html#SectorIdentifierValidation) for all the OAuth clients in the system, ensuring they all receive the same paired pseudonymous identifier for each Synapse user.  When registering as an OIDC client with Synapse, include `sector_identifier_uri=<this_host>/redirect_uris.json`.
+
 ## Building the app
 This is a java application which we build with standard [apache maven](https://maven.apache.org/what-is-maven.html)
 tooling. AWS beanstalk requires files to be in a
-[standard diredtory structure](https://docs.aws.amazon.com/elasticbeanstalk/latest/dg/java-tomcat-platform-directorystructure.html).
+[standard directory structure](https://docs.aws.amazon.com/elasticbeanstalk/latest/dg/java-tomcat-platform-directorystructure.html).
 
 ```buildoutcfg
 mvn clean package

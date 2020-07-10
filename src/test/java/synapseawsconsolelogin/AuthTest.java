@@ -6,6 +6,8 @@ import static org.junit.Assert.assertTrue;
 import static org.mockito.Matchers.anyString;
 import static org.mockito.Mockito.when;
 
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -243,6 +245,26 @@ public class AuthTest {
 		Auth auth = new Auth();
 		String version = auth.getAppVersion();
 		assertEquals(String.format("%1$s-%2$s", "20200201-11:55", "0.1-3-g8eda288"), version);
+	}
+	
+	@Test
+	public void testRedirectURIs() {
+		System.setProperty("REDIRECT_URIS", "foo,bar");
+		
+		List<String> expected = ImmutableList.of("foo", "bar");
+		
+		Auth auth = new Auth();
+		
+		assertEquals(expected, auth.getRedirectURIs("baz"));
+	}
+
+	@Test
+	public void testRedirectURIsDefault() {
+		System.clearProperty("REDIRECT_URIS");
+		
+		Auth auth = new Auth();
+		
+		assertEquals(Collections.singletonList("baz"), auth.getRedirectURIs("baz"));
 	}
 
 }
