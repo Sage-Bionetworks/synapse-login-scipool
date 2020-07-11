@@ -415,7 +415,7 @@ public class Auth extends HttpServlet {
 			resp.setStatus(200);
 			JSONArray o = new JSONArray();
 			for (String s : getRedirectURIs(getRedirectBackUrlSynapse(req))) {
-				o.put(s);
+				o.put(s.trim());
 			}
 			PrintWriter out = resp.getWriter();
 			out.print(o.toString());
