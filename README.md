@@ -5,8 +5,7 @@ This app logs in to the AWS Console using Synapse as the OpenID Connect
 ## Configurations
 The app is configured with parameters listed below, which can be passed as
 properties, environment variables, AWS Simple System Management (SSM) parameters,
-or a properties file on the class loader search path called 
-[global.properties](src/main/resources/global.properties)
+or a properties file on the class loader search path called `global.properties`
 like so:
 
 ```
