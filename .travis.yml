@@ -15,20 +15,14 @@ install:
   - pip install --upgrade pre-commit awsebcli
 stages:
   - name: test
-  - name: deploy-scipooldev
-    if: type = push AND branch = develop
-  - name: deploy-scipoolprod
-    if: type = push AND branch = prod
+  - name: deploy
+    if: type = push AND (branch = develop OR branch = prod OR branch = strides)
 jobs:
   include:
     - stage: test
       script:
-        - mvn clean test
-    - stage: deploy-scipooldev
+        - mvn clean package
+    - stage: deploy
       script:
         - mvn clean package
-        - eb deploy synapse-login-scipooldev --profile default --region us-east-1 --verbose
-    - stage: deploy-scipoolprod
-      script:
-        - mvn clean package
-        - eb deploy synapse-login-scipoolprod --profile default --region us-east-1 --verbose
+        - eb deploy synapse-login-$TRAVIS_BRANCH --profile default --region us-east-1 --verbose

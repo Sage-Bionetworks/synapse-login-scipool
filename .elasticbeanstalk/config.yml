@@ -3,6 +3,8 @@ branch-defaults:
     environment: synapse-login-scipooldev
   prod:
     environment: synapse-login-scipoolprod
+  strides:
+    environment: synapse-login-strides
 global:
   application_name: synapse-login
   workspace_type: Application
