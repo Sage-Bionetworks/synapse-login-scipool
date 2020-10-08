@@ -15,20 +15,24 @@ install:
   - pip install --upgrade pre-commit awsebcli
 stages:
   - name: test
-  - name: deploy-scipooldev
-    if: type = push AND branch = develop
-  - name: deploy-scipoolprod
-    if: type = push AND branch = prod
+  - name: deploy
+    if: type = push AND (branch = develop OR branch = prod OR branch = strides)
+
+# map deployment target to beanstalk environment defined in .elasticbeanstalk/config.yaml
+before_script: |
+  if [[ $TRAVIS_BRANCH == 'develop' ]]; then
+    export BEANSTALK_ENV="synapse-login-scipooldev"
+  elif [[ $TRAVIS_BRANCH == 'prod' ]]; then
+    export BEANSTALK_ENV="synapse-login-scipoolprod"
+  elif [[ $TRAVIS_BRANCH == 'strides' ]]; then
+    export BEANSTALK_ENV="synapse-login-strides"
+  fi
 jobs:
   include:
     - stage: test
       script:
-        - mvn clean test
-    - stage: deploy-scipooldev
+        - mvn clean package
+    - stage: deploy
       script:
         - mvn clean package
-        - eb deploy synapse-login-scipooldev --profile default --region us-east-1 --verbose
-    - stage: deploy-scipoolprod
-      script:
-        - mvn clean package
-        - eb deploy synapse-login-scipoolprod --profile default --region us-east-1 --verbose
+        - eb deploy $BEANSTALK_ENV --profile default --region us-east-1 --verbose
