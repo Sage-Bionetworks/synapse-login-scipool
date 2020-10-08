@@ -20,15 +20,11 @@ stages:
 
 # map deployment target to beanstalk environment defined in .elasticbeanstalk/config.yaml
 before_script: |
-  if [ $TRAVIS_BRANCH == 'develop' ]
-  then
+  if [[ $TRAVIS_BRANCH == 'develop' ]]; then
     export BEANSTALK_ENV="synapse-login-scipooldev"
-  then
-  elif [ $TRAVIS_BRANCH == 'prod' ]
+  elif [[ $TRAVIS_BRANCH == 'prod' ]]; then
     export BEANSTALK_ENV="synapse-login-scipoolprod"
-  then
-  elif [ $TRAVIS_BRANCH == 'strides' ]
-  then
+  elif [[ $TRAVIS_BRANCH == 'strides' ]]; then
     export BEANSTALK_ENV="synapse-login-strides"
   fi
 jobs:
