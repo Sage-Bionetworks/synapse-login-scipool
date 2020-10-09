@@ -264,6 +264,11 @@ public class Auth extends HttpServlet {
 		return Jwts.parser().parseClaimsJwt(unsignedToken);
 	}
 	
+	// tag values must adhere to the regex: [\p{L}\p{Z}\p{N}_.:/=+\-@]*
+	public static String sanitizeTagValue(String tagValue) {
+		return tagValue.replaceAll("[^\\p{L}\\p{Z}\\p{N}_.:/=+\\-@]", " ");
+	}
+	
 	public AssumeRoleRequest createAssumeRoleRequest(Claims claims, String roleArn, String selectedTeam) {
 		// here we collect all the user information to be added to the session
 		Map<String,String> sessionTags = new HashMap<String,String>();
@@ -302,7 +307,7 @@ public class Auth extends HttpServlet {
 		assumeRoleRequest.setRoleSessionName(awsSessionName);
 		Collection<Tag> tags = new ArrayList<Tag>();
 		for (String tagName: sessionTags.keySet()) {
-			tags.add(new Tag().withKey(tagName).withValue(sessionTags.get(tagName)));				
+			tags.add(new Tag().withKey(tagName).withValue(sanitizeTagValue(sessionTags.get(tagName))));				
 		}
 		assumeRoleRequest.setTags(tags);
 		return assumeRoleRequest;
