@@ -264,7 +264,8 @@ public class Auth extends HttpServlet {
 		return Jwts.parser().parseClaimsJwt(unsignedToken);
 	}
 	
-	// tag values must adhere to the regex: [\p{L}\p{Z}\p{N}_.:/=+\-@]*
+	// tag values must adhere to the regex: [\p{L}\p{Z}\p{N}_.:/=+\-@]* as per:
+	// https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Using_Tags.html#tag-restrictions
 	public static String sanitizeTagValue(String tagValue) {
 		return tagValue.replaceAll("[^\\p{L}\\p{Z}\\p{N}_.:/=+\\-@]", " ");
 	}

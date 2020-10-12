@@ -271,7 +271,7 @@ public class AuthTest {
 	public void testSanitizeValues() {
 		assertEquals("Sage-Bionetworks  A Better Science Company ", Auth.sanitizeTagValue("Sage-Bionetworks (A Better Science Company)"));
 		assertEquals("abc XYZ 123  _.:/=+ -@", Auth.sanitizeTagValue("abc XYZ 123 \t_.:/=+\\-@"));
-		assertEquals("                 ", Auth.sanitizeTagValue("!#$%^&*(){}|\"';<>"));
+		assertEquals("                  ", Auth.sanitizeTagValue("!#$%^&*(){}|\"';<>,"));
 	}
 
 }
