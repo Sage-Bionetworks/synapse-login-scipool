@@ -9,30 +9,39 @@ before_install:
   - pyenv install 3.6.3
   - pyenv global 3.6.3
 install:
-  - wget https://github.com/Sage-Bionetworks/infra-utils/archive/master.zip -O /tmp/infra-utils.zip
-  - unzip -j -n /tmp/infra-utils.zip -x "infra-utils-master/.gitignore" "infra-utils-master/LICENSE" "infra-utils-master/*.md" "infra-utils-master/aws/*"
-  - ./setup_aws_cli.sh || travis_terminate 1
-  - pip install --upgrade pre-commit awsebcli
+  - pip install pre-commit travis-wait-improved awsebcli
 stages:
   - name: test
-  - name: deploy
-    if: type = push AND (branch = develop OR branch = prod OR branch = strides)
-
-# map deployment target to beanstalk environment defined in .elasticbeanstalk/config.yaml
-before_script: |
-  if [[ $TRAVIS_BRANCH == 'develop' ]]; then
-    export BEANSTALK_ENV="synapse-login-scipooldev"
-  elif [[ $TRAVIS_BRANCH == 'prod' ]]; then
-    export BEANSTALK_ENV="synapse-login-scipoolprod"
-  elif [[ $TRAVIS_BRANCH == 'strides' ]]; then
-    export BEANSTALK_ENV="synapse-login-strides"
-  fi
+  - name: deploy-develop
+    if: type = push AND branch = develop
+  - name: deploy-prod
+    if: type = push AND branch = prod
 jobs:
   include:
     - stage: test
       script:
         - mvn clean package
-    - stage: deploy
+    - stage: deploy-develop
+      name: "org-sagebase-scipooldev"
       script:
+        - mkdir -p ~/.aws
+        - echo -e "[default]\nregion=us-east-1\nsource_profile=default\nrole_arn=$AwsCfServiceRoleArn_develop" > ~/.aws/config
+        - echo -e "[default]\nregion=us-east-1\naws_access_key_id=$AwsTravisAccessKey_develop\naws_secret_access_key=$AwsTravisSecretAccessKey_develop" > ~/.aws/credentials
         - mvn clean package
-        - eb deploy $BEANSTALK_ENV --profile default --region us-east-1 --verbose
+        - travis-wait-improved --timeout 30m eb deploy --verbose synapse-login-scipooldev
+    - stage: deploy-prod
+      name: "org-sagebase-scipoolprod"
+      script:
+        - mkdir -p ~/.aws
+        - echo -e "[default]\nregion=us-east-1\nsource_profile=default\nrole_arn=$AwsCfServiceRoleArn_prod" > ~/.aws/config
+        - echo -e "[default]\nregion=us-east-1\naws_access_key_id=$AwsTravisAccessKey_prod\naws_secret_access_key=$AwsTravisSecretAccessKey_prod" > ~/.aws/credentials
+        - mvn clean package
+        - travis-wait-improved --timeout 30m eb deploy --verbose synapse-login-scipoolprod
+    - stage: deploy-prod
+      name: "org-sagebase-strides"
+      script:
+        - mkdir -p ~/.aws
+        - echo -e "[default]\nregion=us-east-1\nsource_profile=default\nrole_arn=$AwsCfServiceRoleArn_strides" > ~/.aws/config
+        - echo -e "[default]\nregion=us-east-1\naws_access_key_id=$AwsTravisAccessKey_strides\naws_secret_access_key=$AwsTravisSecretAccessKey_strides" > ~/.aws/credentials
+        - mvn clean package
+        - travis-wait-improved --timeout 30m eb deploy --verbose synapse-login-strides
