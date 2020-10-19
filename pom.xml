@@ -20,21 +20,38 @@
 		<appengine.target.version>1.9.64</appengine.target.version>
 		<appengine-maven-plugin-version>1.3.2</appengine-maven-plugin-version>
 
+		<synapseVersion>330.1-3-ga0aa56f</synapseVersion>
 	</properties>
 
+	<repositories>
+		<repository>
+			<id>sagebionetworks-releases-local</id>
+			<name>sagebionetworks-releases-local</name>
+			<url>https://sagebionetworks.jfrog.io/sagebionetworks/libs-releases-local
+			</url>
+		</repository>
+	</repositories>
+
 	<dependencies>
-	
+
 		<!-- https://mvnrepository.com/artifact/com.amazonaws/aws-java-sdk -->
 		<dependency>
-		    <groupId>com.amazonaws</groupId>
-		    <artifactId>aws-java-sdk</artifactId>
-		    <version>1.11.774</version>
+			<groupId>com.amazonaws</groupId>
+			<artifactId>aws-java-sdk</artifactId>
+			<version>1.11.774</version>
 		</dependency>
-		
+
+		<!-- https://mvnrepository.com/artifact/com.amazonaws/aws-java-sdk-marketplacemeteringservice -->
+		<dependency>
+			<groupId>software.amazon.awssdk</groupId>
+			<artifactId>marketplacemeteringservice</artifactId>
+			<version>2.0.0-preview-11</version>
+		</dependency>
+
 		<dependency>
 			<groupId>io.jsonwebtoken</groupId>
 			<artifactId>jjwt</artifactId>
-		    <version>0.9.1</version>
+			<version>0.9.1</version>
 		</dependency>
 
 		<dependency>
@@ -116,7 +133,17 @@
 			<version>1.3.7</version>
 		</dependency>
 
+		<dependency>
+			<groupId>org.sagebionetworks</groupId>
+			<artifactId>synapseJavaClient</artifactId>
+			<version>${synapseVersion}</version>
+		</dependency>
 
+		<dependency>
+			<groupId>org.sagebionetworks</groupId>
+			<artifactId>lib-shared-models</artifactId>
+			<version>${synapseVersion}</version>
+		</dependency>
 	</dependencies>
 
 	<build>

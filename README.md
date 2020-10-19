@@ -18,6 +18,9 @@ SESSION_TIMEOUT_SECONDS=43200
 SESSION_NAME_CLAIMS=userid
 SESSION_TAG_CLAIMS=sub,userid,user_name
 REDIRECT_URIS=https://.....,https://....
+MARKETPLACE_ID_TABLE_ID=synxxxx
+SYNAPSE_CLIENT_ACCESS_TOKEN=xxxxxx
+
 ```
 
 The name of the properties file, `global.properties` can be overridden by setting an environment variable or 
@@ -54,6 +57,16 @@ The `SESSION_NAME_CLAIMS` config is also a comma separated list of claims, but u
 This application will host a static list of redirect URIs including those used by itself and those used by other Service Catalog components which authenticate using Synapse as an identity provider. The `REDIRECT_URIS` parameter is a comma separated list of OAuth redirect URIs and the list appears as a JSON Array at the URI, `/redirect_uris.json`.
 
 Technically this application establishes the [sector identifier](https://openid.net/specs/openid-connect-registration-1_0.html#SectorIdentifierValidation) for all the OAuth clients in the system, ensuring they all receive the same paired pseudonymous identifier for each Synapse user.  When registering as an OIDC client with Synapse, include `sector_identifier_uri=<this_host>/redirect_uris.json`.
+
+
+### MARKETPLACE_PRODUCT_CODE_PARAMETER
+The marketplace product parameter for the AWS Marketplace product being subscribed to.
+
+### MARKETPLACE_ID_TABLE_ID
+The ID of a Synapse table with columns `userId` and `marketplaceCustomerId`.  This holds the mapping from Synapse users to AWS Marketplace subscriptions.
+
+### SYNAPSE_CLIENT_ACCESS_TOKEN
+This is an [access token](https://rest-docs.synapse.org/rest/POST/personalAccessToken.html) for a Synapse account that has read/write access to the table given by `MARKETPLACE_ID_TABLE_ID`.
 
 ## Building the app
 This is a java application which we build with standard [apache maven](https://maven.apache.org/what-is-maven.html)

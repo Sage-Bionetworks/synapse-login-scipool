@@ -6,6 +6,7 @@ import static org.junit.Assert.assertTrue;
 import static org.mockito.Matchers.anyString;
 import static org.mockito.Mockito.when;
 
+import java.io.UnsupportedEncodingException;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -21,6 +22,7 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.Mock;
 import org.mockito.runners.MockitoJUnitRunner;
+import org.sagebionetworks.client.SynapseClient;
 
 import com.amazonaws.AmazonClientException;
 import com.amazonaws.SdkClientException;
@@ -50,6 +52,12 @@ public class AuthTest {
 	@Mock
 	private HttpGetExecutor mockHttpGetExecutor;
 	
+	@Mock
+	private SynapseClient mockSynapseClient;
+	
+	@Mock
+	private TableUtil mockTableUtil;
+	
 	@Before
 	public void before() {
 		System.setProperty("TEAM_TO_ROLE_ARN_MAP","[{\"teamId\":\"123456\",\"roleArn\":\"arn:aws:iam::foo\"},{\"teamId\":\"345678\",\"roleArn\":\"arn:aws:iam::bar\"}]");
@@ -70,7 +78,7 @@ public class AuthTest {
 	
 	@Test
 	public void testReadTeamToArnMap() {
-		Auth auth = new Auth();
+		Auth auth = new Auth(mockTableUtil);
 		
 		Map<String,String> map = auth.getTeamToRoleMap();
 		assertEquals(2, map.size());
@@ -80,18 +88,18 @@ public class AuthTest {
 	}
 	
 	@Test
-	public void testGetAuthUrl() {
-		Auth auth = new Auth();
+	public void testGetAuthUrl() throws UnsupportedEncodingException {
+		Auth auth = new Auth(mockTableUtil);
 		
-		String expected = "https://signin.synapse.org?response_type=code&client_id=%s&redirect_uri=%s&claims={\"id_token\":{\"team\":{\"values\":[\"123456\",\"345678\"]},\"user_name\":{\"essential\":true},\"userid\":{\"essential\":true}},\"userinfo\":{\"team\":{\"values\":[\"123456\",\"345678\"]},\"user_name\":{\"essential\":true},\"userid\":{\"essential\":true}}}";
-		String actual = auth.getAuthorizeUrl();
+		String expected = "https://signin.synapse.org?response_type=code&client_id=%s&redirect_uri=%s&claims={\"id_token\":{\"team\":{\"values\":[\"123456\",\"345678\"]},\"user_name\":{\"essential\":true},\"userid\":{\"essential\":true}},\"userinfo\":{\"team\":{\"values\":[\"123456\",\"345678\"]},\"user_name\":{\"essential\":true},\"userid\":{\"essential\":true}}}&state=state";
+		String actual = auth.getAuthorizeUrl("state");
 		assertEquals(expected, actual);
 	}
 	
 	@Test
 	public void testGetPropertyFromGlobalPropertiesFile() {
 		String value = "testPropertyValue";
-		Auth auth = new Auth();
+		Auth auth = new Auth(mockTableUtil);
 		
 		assertEquals(value, auth.getProperty(TEST_PROPERTY_NAME));
 		
@@ -101,14 +109,14 @@ public class AuthTest {
 	public void testGetPropertyOverridingFileWithProperty() {
 		String value = "someOtherValue";
 		System.setProperty(TEST_PROPERTY_NAME, value);
-		Auth auth = new Auth();
+		Auth auth = new Auth(mockTableUtil);
 		assertEquals(value, auth.getProperty(TEST_PROPERTY_NAME));
 	}
 
 	@Test
 	public void testGetMissingOptionalProperty() {
 		Assume.assumeTrue(System.getProperty("SKIP_AWS")==null);
-		Auth auth = new Auth();
+		Auth auth = new Auth(mockTableUtil);
 		assertNull(auth.getProperty("undefined-property", false));
 	}
 	
@@ -128,7 +136,7 @@ public class AuthTest {
 		String ssmKey = UUID.randomUUID().toString();
 		String propertyValue = UUID.randomUUID().toString();
 		
-		Auth auth = new Auth();
+		Auth auth = new Auth(mockTableUtil);
 		
 		// the property has NOT been stored yet
 		assertNull(auth.getProperty(propertyName, false));
@@ -169,7 +177,7 @@ public class AuthTest {
 		String propertyName = UUID.randomUUID().toString();
 		String ssmKey = UUID.randomUUID().toString();
 
-		Auth auth = new Auth();
+		Auth auth = new Auth(mockTableUtil);
 
 		// the property name hasn't been stored at all
 		assertNull(auth.getProperty(propertyName, false));
@@ -193,7 +201,7 @@ public class AuthTest {
 		credentials.setSecretAccessKey("keySecret");
 		credentials.setSessionToken("token");
 		
-		Auth auth = new Auth();
+		Auth auth = new Auth(mockTableUtil);
 		
 		// method under test
 		String actual = auth.getConsoleLoginURL(req, credentials, mockHttpGetExecutor);
@@ -213,7 +221,7 @@ public class AuthTest {
 		System.setProperty("SESSION_NAME_CLAIMS", "userid,user_name");
 		
 		Claims claims = new DefaultClaims();
-		Auth auth = new Auth();
+		Auth auth = new Auth(mockTableUtil);
 		claims.put("team", ImmutableList.of("888", "999"));
 		claims.put("userid", userid);
 		claims.put("user_name", "aname");
@@ -242,7 +250,7 @@ public class AuthTest {
 
 	@Test
 	public void testInitApp() {
-		Auth auth = new Auth();
+		Auth auth = new Auth(mockTableUtil);
 		String version = auth.getAppVersion();
 		assertEquals(String.format("%1$s-%2$s", "20200201-11:55", "0.1-3-g8eda288"), version);
 	}
@@ -253,7 +261,7 @@ public class AuthTest {
 		
 		List<String> expected = ImmutableList.of("foo", "bar");
 		
-		Auth auth = new Auth();
+		Auth auth = new Auth(mockTableUtil);
 		
 		assertEquals(expected, auth.getRedirectURIs("baz"));
 	}
@@ -262,7 +270,7 @@ public class AuthTest {
 	public void testRedirectURIsDefault() {
 		System.clearProperty("REDIRECT_URIS");
 		
-		Auth auth = new Auth();
+		Auth auth = new Auth(mockTableUtil);
 		
 		assertEquals(Collections.singletonList("baz"), auth.getRedirectURIs("baz"));
 	}
