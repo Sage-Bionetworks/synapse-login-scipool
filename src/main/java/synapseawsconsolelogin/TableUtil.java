@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import org.sagebionetworks.client.SynapseClient;
 import org.sagebionetworks.client.exceptions.SynapseException;
@@ -15,6 +17,7 @@ import org.sagebionetworks.repo.model.table.RowSet;
 import org.sagebionetworks.repo.model.table.SelectColumn;
 
 public class TableUtil {
+	private static Logger logger = Logger.getLogger("TableUtil");
 
 	private static final int QUERY_PARTS_MASK = 
 			SynapseClient.QUERY_PARTMASK |
@@ -44,7 +47,6 @@ public class TableUtil {
 		
 		if (rows.getRows().size()>1) {
 			throw new IllegalStateException("There are multiple AWS customer IDs for Synapse user "+userId);
-			// TODO log it
 		}
 		
 		if (rows.getRows().isEmpty()) {
@@ -60,7 +62,6 @@ public class TableUtil {
 		
 		if (!userId.equals(rowUser)) {
 			throw new IllegalStateException(rowUser+" is not "+userId);
-			// TODO log it
 		}
 		
 		return marketplaceId;

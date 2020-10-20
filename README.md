@@ -18,6 +18,7 @@ SESSION_TIMEOUT_SECONDS=43200
 SESSION_NAME_CLAIMS=userid
 SESSION_TAG_CLAIMS=sub,userid,user_name
 REDIRECT_URIS=https://.....,https://....
+MARKETPLACE_PRODUCT_CODE_PARAMETER=xxxxxx
 MARKETPLACE_ID_TABLE_ID=synxxxx
 SYNAPSE_CLIENT_ACCESS_TOKEN=xxxxxx
 
@@ -59,13 +60,13 @@ This application will host a static list of redirect URIs including those used b
 Technically this application establishes the [sector identifier](https://openid.net/specs/openid-connect-registration-1_0.html#SectorIdentifierValidation) for all the OAuth clients in the system, ensuring they all receive the same paired pseudonymous identifier for each Synapse user.  When registering as an OIDC client with Synapse, include `sector_identifier_uri=<this_host>/redirect_uris.json`.
 
 
-### MARKETPLACE_PRODUCT_CODE_PARAMETER
+### Marketplace product code
 The marketplace product parameter for the AWS Marketplace product being subscribed to.
 
-### MARKETPLACE_ID_TABLE_ID
+### Marketplace ID Table ID
 The ID of a Synapse table with columns `userId` and `marketplaceCustomerId`.  This holds the mapping from Synapse users to AWS Marketplace subscriptions.
 
-### SYNAPSE_CLIENT_ACCESS_TOKEN
+### Synapse client access token
 This is an [access token](https://rest-docs.synapse.org/rest/POST/personalAccessToken.html) for a Synapse account that has read/write access to the table given by `MARKETPLACE_ID_TABLE_ID`.
 
 ## Building the app

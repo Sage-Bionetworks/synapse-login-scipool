@@ -231,7 +231,7 @@ public class Auth extends HttpServlet {
 			}
 			resp.setStatus(400);
 		} else {
-			// log in with Synapse, passing along the marketplace token.  TODO should we encrypt it?
+			// log in with Synapse, passing along the marketplace token.
 			String redirectBackUrl = getRedirectBackUrlSynapse(req); // TODO should we have a separate redirect-back URI for subscription?
 			String redirectUrl = new OAuth2Api(getAuthorizeUrl(awsMarketPlaceToken), TOKEN_URL).
 					getAuthorizationUrl(new OAuthConfig(getClientIdSynapse(), null, redirectBackUrl, null, OPENID, null));
@@ -266,7 +266,7 @@ public class Auth extends HttpServlet {
 		try {
 			doGetIntern(req, resp);
 		} catch (Exception e) {
-			logger.log(Level.SEVERE, "", e);
+			logger.log(Level.SEVERE, e.getMessage(), e);
 			resp.setContentType("text/plain");
 			try (ServletOutputStream os=resp.getOutputStream()) {
 				os.println("Error:");
@@ -327,10 +327,9 @@ public class Auth extends HttpServlet {
 		ResolveCustomerRequest resolveCustomerRequest = new ResolveCustomerRequest();
 		resolveCustomerRequest.setRegistrationToken(awsMarketplaceToken);
 		ResolveCustomerResult resolveCustomerResult = client.resolveCustomer(resolveCustomerRequest);
-		// TODO log result
+		logger.log(Level.INFO, "ProductresolveCustomerResult: "+resolveCustomerResult);
 		if (StringUtils.isNotEmpty(expectedProductCode) && !expectedProductCode.equals(resolveCustomerResult.getProductCode())) {
-			throw new RuntimeException ("Expected product code "+expectedProductCode+" but found "+resolveCustomerResult.getProductCode());
-			// TODO log the error
+			throw new RuntimeException("Expected product code "+expectedProductCode+" but found "+resolveCustomerResult.getProductCode());
 		}
 		return resolveCustomerResult.getCustomerIdentifier();
 	}
@@ -449,7 +448,7 @@ public class Auth extends HttpServlet {
 			if (StringUtils.isNotEmpty(urlEncodedAwsMarketPlaceToken)) {
 				String awsMarketPlaceToken = URLDecoder.decode(urlEncodedAwsMarketPlaceToken, UTF8);
 				// exchange for AWS Customer ID
-				String optionalExpectedProductCode = getProperty(MARKETPLACE_PRODUCT_CODE_PARAMETER, false); // TODO document parameter
+				String optionalExpectedProductCode = getProperty(MARKETPLACE_PRODUCT_CODE_PARAMETER, false);
 				String customerIdentifier = resolveCustomer(awsMarketPlaceToken, optionalExpectedProductCode);
 				// write userId + customer ID to Synapse table
 				// look up userId in Synapse table.  Is it already there with another customerIdentifier?
