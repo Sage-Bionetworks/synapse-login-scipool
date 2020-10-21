@@ -478,7 +478,7 @@ public class Auth extends HttpServlet {
 			String userId = claims.get(USER_ID_CLAIM_NAME, String.class);
 
 			if (!registerCustomer(req, resp, userId) ) {
-				// previously subscribed to the Marketplace product with another Synapse account.
+				// previously subscribed to the Marketplace product with this Synapse account and a different AWS customer id.
 				resp.setContentType("text/plain");
 				resp.setCharacterEncoding(UTF8);
 				resp.setStatus(400);

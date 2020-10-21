@@ -48,7 +48,6 @@ public class DynamoDbHelperTest {
 			// OK, continue
 		}
 		
-		
 		// create table
 		CreateTableRequest createTableRequest = new CreateTableRequest();
 		AttributeDefinition attributeDefinition = new AttributeDefinition();

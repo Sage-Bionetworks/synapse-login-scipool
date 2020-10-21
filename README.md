@@ -60,13 +60,10 @@ Technically this application establishes the [sector identifier](https://openid.
 
 
 ### Marketplace product code
-The marketplace product parameter for the AWS Marketplace product being subscribed to.
+The code for the AWS Marketplace product being subscribed to.
 
 ### Marketplace ID Dynamo Table Name
 The name of the Dynamo table that holds the mapping from Synapse users to AWS Marketplace subscriptions.
-
-### Synapse client access token
-This is an [access token](https://rest-docs.synapse.org/rest/POST/personalAccessToken.html) for a Synapse account that has read/write access to the table given by `MARKETPLACE_ID_TABLE_ID`.
 
 ## Building the app
 This is a java application which we build with standard [apache maven](https://maven.apache.org/what-is-maven.html)
