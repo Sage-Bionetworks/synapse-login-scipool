@@ -15,23 +15,8 @@
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<maven.compiler.target>1.7</maven.compiler.target>
 		<maven.compiler.source>1.7</maven.compiler.source>
-
-		<appengine.app.version>1</appengine.app.version>
-		<appengine.target.version>1.9.64</appengine.target.version>
-		<appengine-maven-plugin-version>1.3.2</appengine-maven-plugin-version>
-
-		<synapseVersion>330.1-3-ga0aa56f</synapseVersion>
 	</properties>
-
-	<repositories>
-		<repository>
-			<id>sagebionetworks-releases-local</id>
-			<name>sagebionetworks-releases-local</name>
-			<url>https://sagebionetworks.jfrog.io/sagebionetworks/libs-releases-local
-			</url>
-		</repository>
-	</repositories>
-
+	
 	<dependencies>
 
 		<!-- https://mvnrepository.com/artifact/com.amazonaws/aws-java-sdk -->
@@ -49,28 +34,15 @@
 		</dependency>
 
 		<dependency>
+			<groupId>software.amazon.awssdk</groupId>
+			<artifactId>dynamodb</artifactId>
+			<version>2.15.11</version>
+		</dependency>
+
+		<dependency>
 			<groupId>io.jsonwebtoken</groupId>
 			<artifactId>jjwt</artifactId>
 			<version>0.9.1</version>
-		</dependency>
-
-		<dependency>
-			<groupId>com.google.appengine</groupId>
-			<artifactId>appengine-api-1.0-sdk</artifactId>
-			<version>${appengine.target.version}</version>
-		</dependency>
-
-		<dependency>
-			<groupId>com.google.appengine</groupId>
-			<artifactId>appengine-testing</artifactId>
-			<version>${appengine.target.version}</version>
-			<scope>test</scope>
-		</dependency>
-		<dependency>
-			<groupId>com.google.appengine</groupId>
-			<artifactId>appengine-api-stubs</artifactId>
-			<version>${appengine.target.version}</version>
-			<scope>test</scope>
 		</dependency>
 
 		<dependency>
@@ -80,7 +52,6 @@
 		</dependency>
 
 		<!-- Compile/runtime dependencies -->
-
 
 		<dependency>
 			<groupId>javax.servlet</groupId>
@@ -132,18 +103,6 @@
 			<artifactId>scribe</artifactId>
 			<version>1.3.7</version>
 		</dependency>
-
-		<dependency>
-			<groupId>org.sagebionetworks</groupId>
-			<artifactId>synapseJavaClient</artifactId>
-			<version>${synapseVersion}</version>
-		</dependency>
-
-		<dependency>
-			<groupId>org.sagebionetworks</groupId>
-			<artifactId>lib-shared-models</artifactId>
-			<version>${synapseVersion}</version>
-		</dependency>
 	</dependencies>
 
 	<build>
@@ -156,8 +115,7 @@
 				<version>2.3</version>
 				<configuration>
 					<archiveClasses>true</archiveClasses>
-					<webResources>
-						<!-- in order to interpolate version from pom into appengine-web.xml -->
+					<!-- webResources>
 						<resource>
 							<directory>${basedir}/src/main/webapp/WEB-INF</directory>
 							<filtering>true</filtering>
@@ -173,13 +131,8 @@
 							<filtering>true</filtering>
 							<targetPath>.ebextensions</targetPath>
 						</resource>
-					</webResources>
+					</webResources-->
 				</configuration>
-			</plugin>
-			<plugin>
-				<groupId>com.google.cloud.tools</groupId>
-				<artifactId>appengine-maven-plugin</artifactId>
-				<version>${appengine-maven-plugin-version}</version>
 			</plugin>
 			<plugin>
 				<groupId>pl.project13.maven</groupId>

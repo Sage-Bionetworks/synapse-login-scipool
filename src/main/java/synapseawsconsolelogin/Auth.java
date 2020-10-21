@@ -38,7 +38,6 @@ import org.apache.commons.lang.StringUtils;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
-import org.sagebionetworks.client.SynapseClient;
 import org.scribe.exceptions.OAuthException;
 import org.scribe.model.OAuthConfig;
 import org.scribe.model.Token;
@@ -103,7 +102,7 @@ public class Auth extends HttpServlet {
 	static final String SYNAPSE_OAUTH_CLIENT_ID_PARAMETER = "SYNAPSE_OAUTH_CLIENT_ID";
 	static final String SYNAPSE_OAUTH_CLIENT_SECRET_PARAMETER = "SYNAPSE_OAUTH_CLIENT_SECRET";
 	static final String MARKETPLACE_PRODUCT_CODE_PARAMETER = "MARKETPLACE_PRODUCT_CODE";
-	static final String MARKETPLACE_ID_TABLE_ID_PARAMETER = "MARKETPLACE_ID_TABLE_ID";
+	static final String MARKETPLACE_ID_DYNAMO_TABLE_NAME_PARAMETER = "MARKETPLACE_ID_DYNAMO_TABLE_NAME";
 	static final String SYNAPSE_CLIENT_ACCESS_TOKEN_PARAMETER = "SYNAPSE_CLIENT_ACCESS_TOKEN";
 	
 	private static final int SESSION_TIMEOUT_SECONDS_DEFAULT = 43200;
@@ -141,19 +140,21 @@ public class Auth extends HttpServlet {
 		return result;
 	}
 	
-	private TableUtil tableUtil = null;
+	private DynamoDbHelper dynamoDbHelper = null;
 
 	public Auth() {
-		SynapseClient synapseClient=SynapseClientFactory.createSynapseClient();
-		synapseClient.setBearerAuthorizationToken(SYNAPSE_CLIENT_ACCESS_TOKEN_PARAMETER);
-		init(new TableUtil(synapseClient));
+		String tableName= getProperty(MARKETPLACE_ID_DYNAMO_TABLE_NAME_PARAMETER);
+		init(new DynamoDbHelper(tableName));
 	}
 	
-	public Auth(TableUtil tableUtil) {
-		init(tableUtil);
+	/*
+	 * For testing
+	 */
+	public Auth(DynamoDbHelper dynamoDbHelper) {
+		init(dynamoDbHelper);
 	}
 		
-	private void init(TableUtil tableUtil) {
+	private void init(DynamoDbHelper dynamoDbHelper) {
 		initProperties();
 		appVersion = initAppVersion();
 		ssmParameterCache = new Properties();
@@ -166,7 +167,7 @@ public class Auth extends HttpServlet {
 		teamToRoleMap = getTeamToRoleMap();
 		awsRegion = getProperty(AWS_REGION_PARAMETER);
 		awsConsoleUrl = String.format(AWS_CONSOLE_URL_TEMPLATE, awsRegion);
-		this.tableUtil = tableUtil;
+		this.dynamoDbHelper = dynamoDbHelper;
 	}
 	
 	public List<String> getCommaSeparatedPropertyAsList(String propertyName, String defaultValue) {
@@ -232,7 +233,7 @@ public class Auth extends HttpServlet {
 			resp.setStatus(400);
 		} else {
 			// log in with Synapse, passing along the marketplace token.
-			String redirectBackUrl = getRedirectBackUrlSynapse(req); // TODO should we have a separate redirect-back URI for subscription?
+			String redirectBackUrl = getRedirectBackUrlSynapse(req);
 			String redirectUrl = new OAuth2Api(getAuthorizeUrl(awsMarketPlaceToken), TOKEN_URL).
 					getAuthorizationUrl(new OAuthConfig(getClientIdSynapse(), null, redirectBackUrl, null, OPENID, null));
 			resp.setHeader(LOCATION, redirectUrl);
@@ -322,16 +323,16 @@ public class Auth extends HttpServlet {
 	}
 	
 	// https://docs.aws.amazon.com/marketplacemetering/latest/APIReference/API_ResolveCustomer.html
-	String resolveCustomer(String awsMarketplaceToken, String expectedProductCode) {
+	ResolveCustomerResult resolveCustomer(String awsMarketplaceToken, String expectedProductCode) {
 		AWSMarketplaceMetering client = AWSMarketplaceMeteringClientBuilder.defaultClient();
 		ResolveCustomerRequest resolveCustomerRequest = new ResolveCustomerRequest();
 		resolveCustomerRequest.setRegistrationToken(awsMarketplaceToken);
 		ResolveCustomerResult resolveCustomerResult = client.resolveCustomer(resolveCustomerRequest);
-		logger.log(Level.INFO, "ProductresolveCustomerResult: "+resolveCustomerResult);
+		logger.log(Level.INFO, "resolveCustomerResult: "+resolveCustomerResult);
 		if (StringUtils.isNotEmpty(expectedProductCode) && !expectedProductCode.equals(resolveCustomerResult.getProductCode())) {
 			throw new RuntimeException("Expected product code "+expectedProductCode+" but found "+resolveCustomerResult.getProductCode());
 		}
-		return resolveCustomerResult.getCustomerIdentifier();
+		return resolveCustomerResult;
 	}
 	
 	public static Jwt<Header,Claims> parseJWT(String token) {
@@ -449,17 +450,16 @@ public class Auth extends HttpServlet {
 				String awsMarketPlaceToken = URLDecoder.decode(urlEncodedAwsMarketPlaceToken, UTF8);
 				// exchange for AWS Customer ID
 				String optionalExpectedProductCode = getProperty(MARKETPLACE_PRODUCT_CODE_PARAMETER, false);
-				String customerIdentifier = resolveCustomer(awsMarketPlaceToken, optionalExpectedProductCode);
+				ResolveCustomerResult resolveCustomerResult = resolveCustomer(awsMarketPlaceToken, optionalExpectedProductCode);
 				// write userId + customer ID to Synapse table
 				// look up userId in Synapse table.  Is it already there with another customerIdentifier?
 				String userId = claims.get(USER_ID_CLAIM_NAME, String.class);
 
-				String tableId = getProperty(MARKETPLACE_ID_TABLE_ID_PARAMETER);
-				String existingCustomerId = tableUtil.getMarketplaceCustomerIdForUser(tableId, userId);
+				String existingCustomerId = dynamoDbHelper.getMarketplaceCustomerIdForUser(userId);
 				if (existingCustomerId==null) {
-					tableUtil.addMarketplaceId(tableId, userId, customerIdentifier);
+					dynamoDbHelper.addMarketplaceId(userId, resolveCustomerResult.getProductCode(), resolveCustomerResult.getCustomerIdentifier());
 				} else {
-					if (existingCustomerId.equals(customerIdentifier)) {
+					if (existingCustomerId.equals(resolveCustomerResult.getCustomerIdentifier())) {
 						// already registered with the existing customer ID, nothing more to do
 					} else {
 						// previously subscribed to the Marketplace product with another Synapse account.

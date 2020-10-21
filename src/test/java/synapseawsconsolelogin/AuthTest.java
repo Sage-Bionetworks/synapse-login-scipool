@@ -7,6 +7,7 @@ import static org.mockito.Matchers.anyString;
 import static org.mockito.Mockito.when;
 
 import java.io.UnsupportedEncodingException;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -22,7 +23,6 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.Mock;
 import org.mockito.runners.MockitoJUnitRunner;
-import org.sagebionetworks.client.SynapseClient;
 
 import com.amazonaws.AmazonClientException;
 import com.amazonaws.SdkClientException;
@@ -35,7 +35,6 @@ import com.amazonaws.services.simplesystemsmanagement.AWSSimpleSystemsManagement
 import com.amazonaws.services.simplesystemsmanagement.AWSSimpleSystemsManagementClientBuilder;
 import com.amazonaws.services.simplesystemsmanagement.model.ParameterType;
 import com.amazonaws.services.simplesystemsmanagement.model.PutParameterRequest;
-import com.google.appengine.repackaged.com.google.common.collect.ImmutableList;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.impl.DefaultClaims;
@@ -53,10 +52,7 @@ public class AuthTest {
 	private HttpGetExecutor mockHttpGetExecutor;
 	
 	@Mock
-	private SynapseClient mockSynapseClient;
-	
-	@Mock
-	private TableUtil mockTableUtil;
+	private DynamoDbHelper dynamoDbHelper;
 	
 	@Before
 	public void before() {
@@ -78,7 +74,7 @@ public class AuthTest {
 	
 	@Test
 	public void testReadTeamToArnMap() {
-		Auth auth = new Auth(mockTableUtil);
+		Auth auth = new Auth(dynamoDbHelper);
 		
 		Map<String,String> map = auth.getTeamToRoleMap();
 		assertEquals(2, map.size());
@@ -89,7 +85,7 @@ public class AuthTest {
 	
 	@Test
 	public void testGetAuthUrl() throws UnsupportedEncodingException {
-		Auth auth = new Auth(mockTableUtil);
+		Auth auth = new Auth(dynamoDbHelper);
 		
 		String expected = "https://signin.synapse.org?response_type=code&client_id=%s&redirect_uri=%s&claims={\"id_token\":{\"team\":{\"values\":[\"123456\",\"345678\"]},\"user_name\":{\"essential\":true},\"userid\":{\"essential\":true}},\"userinfo\":{\"team\":{\"values\":[\"123456\",\"345678\"]},\"user_name\":{\"essential\":true},\"userid\":{\"essential\":true}}}&state=state";
 		String actual = auth.getAuthorizeUrl("state");
@@ -99,7 +95,7 @@ public class AuthTest {
 	@Test
 	public void testGetPropertyFromGlobalPropertiesFile() {
 		String value = "testPropertyValue";
-		Auth auth = new Auth(mockTableUtil);
+		Auth auth = new Auth(dynamoDbHelper);
 		
 		assertEquals(value, auth.getProperty(TEST_PROPERTY_NAME));
 		
@@ -109,14 +105,14 @@ public class AuthTest {
 	public void testGetPropertyOverridingFileWithProperty() {
 		String value = "someOtherValue";
 		System.setProperty(TEST_PROPERTY_NAME, value);
-		Auth auth = new Auth(mockTableUtil);
+		Auth auth = new Auth(dynamoDbHelper);
 		assertEquals(value, auth.getProperty(TEST_PROPERTY_NAME));
 	}
 
 	@Test
 	public void testGetMissingOptionalProperty() {
 		Assume.assumeTrue(System.getProperty("SKIP_AWS")==null);
-		Auth auth = new Auth(mockTableUtil);
+		Auth auth = new Auth(dynamoDbHelper);
 		assertNull(auth.getProperty("undefined-property", false));
 	}
 	
@@ -136,7 +132,7 @@ public class AuthTest {
 		String ssmKey = UUID.randomUUID().toString();
 		String propertyValue = UUID.randomUUID().toString();
 		
-		Auth auth = new Auth(mockTableUtil);
+		Auth auth = new Auth(dynamoDbHelper);
 		
 		// the property has NOT been stored yet
 		assertNull(auth.getProperty(propertyName, false));
@@ -177,7 +173,7 @@ public class AuthTest {
 		String propertyName = UUID.randomUUID().toString();
 		String ssmKey = UUID.randomUUID().toString();
 
-		Auth auth = new Auth(mockTableUtil);
+		Auth auth = new Auth(dynamoDbHelper);
 
 		// the property name hasn't been stored at all
 		assertNull(auth.getProperty(propertyName, false));
@@ -201,7 +197,7 @@ public class AuthTest {
 		credentials.setSecretAccessKey("keySecret");
 		credentials.setSessionToken("token");
 		
-		Auth auth = new Auth(mockTableUtil);
+		Auth auth = new Auth(dynamoDbHelper);
 		
 		// method under test
 		String actual = auth.getConsoleLoginURL(req, credentials, mockHttpGetExecutor);
@@ -221,8 +217,11 @@ public class AuthTest {
 		System.setProperty("SESSION_NAME_CLAIMS", "userid,user_name");
 		
 		Claims claims = new DefaultClaims();
-		Auth auth = new Auth(mockTableUtil);
-		claims.put("team", ImmutableList.of("888", "999"));
+		Auth auth = new Auth(dynamoDbHelper);
+		List<String> teams = new ArrayList<String>();
+		teams.add("888");
+		teams.add("999");
+		claims.put("team", teams);
 		claims.put("userid", userid);
 		claims.put("user_name", "aname");
 
@@ -250,7 +249,7 @@ public class AuthTest {
 
 	@Test
 	public void testInitApp() {
-		Auth auth = new Auth(mockTableUtil);
+		Auth auth = new Auth(dynamoDbHelper);
 		String version = auth.getAppVersion();
 		assertEquals(String.format("%1$s-%2$s", "20200201-11:55", "0.1-3-g8eda288"), version);
 	}
@@ -259,9 +258,11 @@ public class AuthTest {
 	public void testRedirectURIs() {
 		System.setProperty("REDIRECT_URIS", "foo,bar");
 		
-		List<String> expected = ImmutableList.of("foo", "bar");
+		List<String> expected = new ArrayList<String>();
+		expected.add("foo");
+		expected.add("bar");
 		
-		Auth auth = new Auth(mockTableUtil);
+		Auth auth = new Auth(dynamoDbHelper);
 		
 		assertEquals(expected, auth.getRedirectURIs("baz"));
 	}
@@ -270,7 +271,7 @@ public class AuthTest {
 	public void testRedirectURIsDefault() {
 		System.clearProperty("REDIRECT_URIS");
 		
-		Auth auth = new Auth(mockTableUtil);
+		Auth auth = new Auth(dynamoDbHelper);
 		
 		assertEquals(Collections.singletonList("baz"), auth.getRedirectURIs("baz"));
 	}
