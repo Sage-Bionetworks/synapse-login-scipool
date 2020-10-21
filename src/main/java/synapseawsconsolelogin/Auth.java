@@ -103,7 +103,6 @@ public class Auth extends HttpServlet {
 	static final String SYNAPSE_OAUTH_CLIENT_SECRET_PARAMETER = "SYNAPSE_OAUTH_CLIENT_SECRET";
 	static final String MARKETPLACE_PRODUCT_CODE_PARAMETER = "MARKETPLACE_PRODUCT_CODE";
 	static final String MARKETPLACE_ID_DYNAMO_TABLE_NAME_PARAMETER = "MARKETPLACE_ID_DYNAMO_TABLE_NAME";
-	static final String SYNAPSE_CLIENT_ACCESS_TOKEN_PARAMETER = "SYNAPSE_CLIENT_ACCESS_TOKEN";
 	
 	private static final int SESSION_TIMEOUT_SECONDS_DEFAULT = 43200;
 	private static final String TAG_PREFIX = "synapse-";
@@ -141,20 +140,21 @@ public class Auth extends HttpServlet {
 	}
 	
 	private DynamoDbHelper dynamoDbHelper = null;
+	private MarketplaceMeteringHelper marketplaceMeteringHelper = null;
 
 	public Auth() {
 		String tableName= getProperty(MARKETPLACE_ID_DYNAMO_TABLE_NAME_PARAMETER);
-		init(new DynamoDbHelper(tableName));
+		init(new DynamoDbHelper(tableName), new MarketplaceMeteringHelper());
 	}
 	
 	/*
 	 * For testing
 	 */
-	public Auth(DynamoDbHelper dynamoDbHelper) {
-		init(dynamoDbHelper);
+	public Auth(DynamoDbHelper dynamoDbHelper, MarketplaceMeteringHelper marketplaceMeteringHelper) {
+		init(dynamoDbHelper, marketplaceMeteringHelper);
 	}
 		
-	private void init(DynamoDbHelper dynamoDbHelper) {
+	private void init(DynamoDbHelper dynamoDbHelper, MarketplaceMeteringHelper marketplaceMeteringHelper) {
 		initProperties();
 		appVersion = initAppVersion();
 		ssmParameterCache = new Properties();
@@ -168,6 +168,7 @@ public class Auth extends HttpServlet {
 		awsRegion = getProperty(AWS_REGION_PARAMETER);
 		awsConsoleUrl = String.format(AWS_CONSOLE_URL_TEMPLATE, awsRegion);
 		this.dynamoDbHelper = dynamoDbHelper;
+		this.marketplaceMeteringHelper = marketplaceMeteringHelper;
 	}
 	
 	public List<String> getCommaSeparatedPropertyAsList(String propertyName, String defaultValue) {
@@ -188,6 +189,10 @@ public class Auth extends HttpServlet {
 		return getCommaSeparatedPropertyAsList(REDIRECT_URIS_PROPERTY_NAME, defaultRedirectURI);
 	}
 
+	/**
+	 * @param state a value to be returned to this application upon successful login (as defined by the OAuth 'code flow')
+	 * @return the URL to redirect the client to for OAuth login.
+	 */
 	public String getAuthorizeUrl(String state) throws UnsupportedEncodingException {
 		// userid claim is used by this application so it always must be included in the list of claims requested from Synapse
 		Set<String> allClaims = new TreeSet<String>(Collections.singleton(USER_ID_CLAIM_NAME));
@@ -221,6 +226,10 @@ public class Auth extends HttpServlet {
 		}
 	}
 	
+	/*
+	 * Initiate the OAuth login flow for the case in which a user is subscribing to Service Catalog
+	 * as a Marketplace product.  Passes the temporary 'marketplace token' as the OAuth state parameter.
+	 */
 	public void handleSubscribe(HttpServletRequest req, HttpServletResponse resp) throws IOException {
 		String awsMarketPlaceToken = req.getHeader("x-amzn-marketplace-token");
 		if (StringUtils.isEmpty(awsMarketPlaceToken)) {
@@ -322,18 +331,7 @@ public class Auth extends HttpServlet {
 		return loginURL;
 	}
 	
-	// https://docs.aws.amazon.com/marketplacemetering/latest/APIReference/API_ResolveCustomer.html
-	ResolveCustomerResult resolveCustomer(String awsMarketplaceToken, String expectedProductCode) {
-		AWSMarketplaceMetering client = AWSMarketplaceMeteringClientBuilder.defaultClient();
-		ResolveCustomerRequest resolveCustomerRequest = new ResolveCustomerRequest();
-		resolveCustomerRequest.setRegistrationToken(awsMarketplaceToken);
-		ResolveCustomerResult resolveCustomerResult = client.resolveCustomer(resolveCustomerRequest);
-		logger.log(Level.INFO, "resolveCustomerResult: "+resolveCustomerResult);
-		if (StringUtils.isNotEmpty(expectedProductCode) && !expectedProductCode.equals(resolveCustomerResult.getProductCode())) {
-			throw new RuntimeException("Expected product code "+expectedProductCode+" but found "+resolveCustomerResult.getProductCode());
-		}
-		return resolveCustomerResult;
-	}
+
 	
 	public static Jwt<Header,Claims> parseJWT(String token) {
 		// Note, we don't check the signature
@@ -402,6 +400,39 @@ public class Auth extends HttpServlet {
 			os.println("</body></html>");
 		}
 	}
+	
+	/*
+	 * return true if subscription is successful or none needed; false if Synapse user linked to another AWS customer id
+	 */
+	public boolean registerCustomer(HttpServletRequest req, HttpServletResponse resp, String userId) throws IOException {
+		// get the 'state' request parameter
+		String urlEncodedAwsMarketPlaceToken = req.getParameter(STATE);
+		if (StringUtils.isEmpty(urlEncodedAwsMarketPlaceToken)) {
+			return true;
+		}
+		
+		String awsMarketPlaceToken = URLDecoder.decode(urlEncodedAwsMarketPlaceToken, UTF8);
+		// exchange for AWS Customer ID
+		String expectedProductCode = getProperty(MARKETPLACE_PRODUCT_CODE_PARAMETER, false);
+		ResolveCustomerResult resolveCustomerResult = marketplaceMeteringHelper.resolveCustomer(awsMarketPlaceToken);
+		if (StringUtils.isNotEmpty(expectedProductCode) && !expectedProductCode.equals(resolveCustomerResult.getProductCode())) {
+			throw new RuntimeException("Expected product code "+expectedProductCode+" but found "+resolveCustomerResult.getProductCode());
+		}
+		// write userId + customer ID to Synapse table
+		// look up userId in Synapse table.  Is it already there with another customerIdentifier?
+
+		String existingCustomerId = dynamoDbHelper.getMarketplaceCustomerIdForUser(userId);
+		if (existingCustomerId==null) {
+			dynamoDbHelper.addMarketplaceId(userId, resolveCustomerResult.getProductCode(), resolveCustomerResult.getCustomerIdentifier());
+		} else {
+			if (existingCustomerId.equals(resolveCustomerResult.getCustomerIdentifier())) {
+				// already registered with the existing customer ID, nothing more to do
+			} else {
+				return false;
+			}
+		}
+		return true;
+	}
 		
 	private void doGetIntern(HttpServletRequest req, HttpServletResponse resp)
 				throws Exception {
@@ -443,37 +474,20 @@ public class Auth extends HttpServlet {
 					break;
 				}
 			}
-
-			// get the 'state' request parameter
-			String urlEncodedAwsMarketPlaceToken = req.getParameter(STATE);
-			if (StringUtils.isNotEmpty(urlEncodedAwsMarketPlaceToken)) {
-				String awsMarketPlaceToken = URLDecoder.decode(urlEncodedAwsMarketPlaceToken, UTF8);
-				// exchange for AWS Customer ID
-				String optionalExpectedProductCode = getProperty(MARKETPLACE_PRODUCT_CODE_PARAMETER, false);
-				ResolveCustomerResult resolveCustomerResult = resolveCustomer(awsMarketPlaceToken, optionalExpectedProductCode);
-				// write userId + customer ID to Synapse table
-				// look up userId in Synapse table.  Is it already there with another customerIdentifier?
-				String userId = claims.get(USER_ID_CLAIM_NAME, String.class);
-
-				String existingCustomerId = dynamoDbHelper.getMarketplaceCustomerIdForUser(userId);
-				if (existingCustomerId==null) {
-					dynamoDbHelper.addMarketplaceId(userId, resolveCustomerResult.getProductCode(), resolveCustomerResult.getCustomerIdentifier());
-				} else {
-					if (existingCustomerId.equals(resolveCustomerResult.getCustomerIdentifier())) {
-						// already registered with the existing customer ID, nothing more to do
-					} else {
-						// previously subscribed to the Marketplace product with another Synapse account.
-						resp.setContentType("text/plain");
-						resp.setCharacterEncoding(UTF8);
-						resp.setStatus(400);
-						PrintWriter out = resp.getWriter();
-						out.print("You have already subscribed to this AWS Marketplace product.");
-						out.flush();
-						return;
-					}
-				}
-			}
 			
+			String userId = claims.get(USER_ID_CLAIM_NAME, String.class);
+
+			if (!registerCustomer(req, resp, userId) ) {
+				// previously subscribed to the Marketplace product with another Synapse account.
+				resp.setContentType("text/plain");
+				resp.setCharacterEncoding(UTF8);
+				resp.setStatus(400);
+				PrintWriter out = resp.getWriter();
+				out.print("You have already subscribed to this AWS Marketplace product.");
+				out.flush();
+				return;
+			}
+
 			// TODO if not in a pre-authorized team but DID provide customer ID, let them through
 			
 			if (roleArn==null) {

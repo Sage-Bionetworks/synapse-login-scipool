@@ -18,9 +18,8 @@ SESSION_TIMEOUT_SECONDS=43200
 SESSION_NAME_CLAIMS=userid
 SESSION_TAG_CLAIMS=sub,userid,user_name
 REDIRECT_URIS=https://.....,https://....
-MARKETPLACE_PRODUCT_CODE_PARAMETER=xxxxxx
-MARKETPLACE_ID_TABLE_ID=synxxxx
-SYNAPSE_CLIENT_ACCESS_TOKEN=xxxxxx
+MARKETPLACE_PRODUCT_CODE=xxxxxx
+MARKETPLACE_ID_DYNAMO_TABLE_NAME=xxxxxx
 
 ```
 
@@ -63,8 +62,8 @@ Technically this application establishes the [sector identifier](https://openid.
 ### Marketplace product code
 The marketplace product parameter for the AWS Marketplace product being subscribed to.
 
-### Marketplace ID Table ID
-The ID of a Synapse table with columns `userId` and `marketplaceCustomerId`.  This holds the mapping from Synapse users to AWS Marketplace subscriptions.
+### Marketplace ID Dynamo Table Name
+The name of the Dynamo table that holds the mapping from Synapse users to AWS Marketplace subscriptions.
 
 ### Synapse client access token
 This is an [access token](https://rest-docs.synapse.org/rest/POST/personalAccessToken.html) for a Synapse account that has read/write access to the table given by `MARKETPLACE_ID_TABLE_ID`.

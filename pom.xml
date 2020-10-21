@@ -115,23 +115,6 @@
 				<version>2.3</version>
 				<configuration>
 					<archiveClasses>true</archiveClasses>
-					<!-- webResources>
-						<resource>
-							<directory>${basedir}/src/main/webapp/WEB-INF</directory>
-							<filtering>true</filtering>
-							<targetPath>WEB-INF</targetPath>
-						</resource>
-						<resource>
-							<directory>${basedir}/src/main/resources</directory>
-							<filtering>true</filtering>
-							<targetPath>WEB-INF/classes</targetPath>
-						</resource>
-						<resource>
-							<directory>${basedir}/.ebextensions</directory>
-							<filtering>true</filtering>
-							<targetPath>.ebextensions</targetPath>
-						</resource>
-					</webResources-->
 				</configuration>
 			</plugin>
 			<plugin>
