@@ -13,6 +13,7 @@
 		<url-pattern>/synapse</url-pattern>
 		<url-pattern>/</url-pattern>
 		<url-pattern>/health</url-pattern>
+		<url-pattern>/about</url-pattern>
 		<url-pattern>/subscribe</url-pattern>
 	</servlet-mapping>
 

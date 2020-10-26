@@ -213,7 +213,7 @@ public class AuthTest {
 	@Test
 	public void testRegisterCustomerWrongProductCode() throws Exception {
 		String marketplaceProductCode = "product-code";
-		System.setProperty("MARKETPLACE_PRODUCT_CODE", marketplaceProductCode);
+		System.setProperty("MARKETPLACE_PRODUCT_CODE_SC", marketplaceProductCode);
 		Auth auth = new Auth(mockDynamoDbHelper, mockMarketplaceMeteringHelper);
 		
 		String marketplaceToken = "marketplace/token";

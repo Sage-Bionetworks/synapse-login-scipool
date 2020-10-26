@@ -101,7 +101,7 @@ public class Auth extends HttpServlet {
 	static final String AWS_REGION_PARAMETER = "AWS_REGION";
 	static final String SYNAPSE_OAUTH_CLIENT_ID_PARAMETER = "SYNAPSE_OAUTH_CLIENT_ID";
 	static final String SYNAPSE_OAUTH_CLIENT_SECRET_PARAMETER = "SYNAPSE_OAUTH_CLIENT_SECRET";
-	static final String MARKETPLACE_PRODUCT_CODE_PARAMETER = "MARKETPLACE_PRODUCT_CODE";
+	static final String MARKETPLACE_PRODUCT_CODE_SC_PARAMETER = "MARKETPLACE_PRODUCT_CODE_SC";
 	static final String MARKETPLACE_ID_DYNAMO_TABLE_NAME_PARAMETER = "MARKETPLACE_ID_DYNAMO_TABLE_NAME";
 	
 	private static final int SESSION_TIMEOUT_SECONDS_DEFAULT = 43200;
@@ -234,7 +234,7 @@ public class Auth extends HttpServlet {
 		String awsMarketPlaceToken = req.getHeader("x-amzn-marketplace-token");
 		if (StringUtils.isEmpty(awsMarketPlaceToken)) {
 			String errorMessage = "Missing x-amzn-marketplace-token header";
-			logger.log(Level.WARNING, errorMessage);
+			logger.log(Level.SEVERE, errorMessage);
 			resp.setContentType("text/plain");
 			try (ServletOutputStream os=resp.getOutputStream()) {
 				os.println(errorMessage);
@@ -408,12 +408,15 @@ public class Auth extends HttpServlet {
 		// get the 'state' request parameter
 		String urlEncodedAwsMarketPlaceToken = req.getParameter(STATE);
 		if (StringUtils.isEmpty(urlEncodedAwsMarketPlaceToken)) {
+			// We pass through here both for regular login and when registering a customer who purchased
+			// SC as a product.  We differentiate the two cases by the presence of the marketplace token.
+			// If absent, it's a simple login and we skip the registration step.
 			return true;
 		}
 		
 		String awsMarketPlaceToken = URLDecoder.decode(urlEncodedAwsMarketPlaceToken, UTF8);
 		// exchange for AWS Customer ID
-		String expectedProductCode = getProperty(MARKETPLACE_PRODUCT_CODE_PARAMETER, false);
+		String expectedProductCode = getProperty(MARKETPLACE_PRODUCT_CODE_SC_PARAMETER, false);
 		ResolveCustomerResult resolveCustomerResult = marketplaceMeteringHelper.resolveCustomer(awsMarketPlaceToken);
 		if (StringUtils.isNotEmpty(expectedProductCode) && !expectedProductCode.equals(resolveCustomerResult.getProductCode())) {
 			throw new RuntimeException("Expected product code "+expectedProductCode+" but found "+resolveCustomerResult.getProductCode());
@@ -427,6 +430,7 @@ public class Auth extends HttpServlet {
 		} else {
 			if (existingCustomerId.equals(resolveCustomerResult.getCustomerIdentifier())) {
 				// already registered with the existing customer ID, nothing more to do
+				logger.log(Level.INFO, "Synapse user "+userId+" already registered customer ID "+existingCustomerId);
 			} else {
 				return false;
 			}
@@ -476,14 +480,23 @@ public class Auth extends HttpServlet {
 			}
 			
 			String userId = claims.get(USER_ID_CLAIM_NAME, String.class);
+			
+			
+			// We pass through here both for regular login and when registering a customer who purchased
+			// SC as a product.
+
 
 			if (!registerCustomer(req, resp, userId) ) {
 				// previously subscribed to the Marketplace product with this Synapse account and a different AWS customer id.
-				resp.setContentType("text/plain");
+				resp.setContentType("text/html");
 				resp.setCharacterEncoding(UTF8);
 				resp.setStatus(400);
 				PrintWriter out = resp.getWriter();
-				out.print("You have already subscribed to this AWS Marketplace product.");
+				out.println("<html><head/><body>");
+				out.println("You have already subscribed to this AWS Marketplace product.<br/>");
+				out.println("Please log in and start using ");
+				out.println("<a href="+getThisEndpoint(req)+">Service Catalog</a>");
+				out.println("</body></html>");
 				out.flush();
 				return;
 			}

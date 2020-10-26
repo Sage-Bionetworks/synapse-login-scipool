@@ -2,6 +2,7 @@ package synapseawsconsolelogin;
 
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -22,19 +23,17 @@ public class DynamoDbHelper {
 	
 	private AmazonDynamoDB amazonDynamoDB;
 	
-	private static final List<String> ATTRIBUTES_TO_RETRIEVE;
-	
-	static {
-		ATTRIBUTES_TO_RETRIEVE = new ArrayList<String>();
-		ATTRIBUTES_TO_RETRIEVE.add(PRODUCT_CODE);
-		ATTRIBUTES_TO_RETRIEVE.add(CUSTOMER_ID);
-	}
+	private static final List<String> ATTRIBUTES_TO_RETRIEVE = Arrays.asList(PRODUCT_CODE, CUSTOMER_ID);
 	
 	private String tableName;
 
-	public DynamoDbHelper(String tableName) {
-		this.amazonDynamoDB = AmazonDynamoDBClientBuilder.defaultClient();
+	public DynamoDbHelper(String tableName, AmazonDynamoDB amazonDynamoDB) {
+		this.amazonDynamoDB = amazonDynamoDB;
 		this.tableName = tableName;
+	}
+	
+	public DynamoDbHelper(String tableName) {
+		this(tableName, AmazonDynamoDBClientBuilder.defaultClient());
 	}
 	
 	private static AttributeValue stringAttributeValue(String s) {

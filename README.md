@@ -51,7 +51,9 @@ https://rest-docs.synapse.org/rest/org/sagebionetworks/repo/model/oauth/OIDCClai
 used to define tags in the AWS session.  The tags are names `synapse-`<claim name>, where <claim name> is the name of the claim given in the config file.
 
 The `SESSION_NAME_CLAIMS` config is also a comma separated list of claims, but used to define the session name, as a colon delimited list of claim values. For example: setting `SESSION_NAME_CLAIMS=userid,email` will display
-`ServiceCatalogEndusers/1234567:joe.smith@gmail.com` in AWS. 
+`ServiceCatalogEndusers/1234567:joe.smith@gmail.com` in AWS.
+
+Note:  The list of claims requested from Synapse is the union of the two lists, `SESSION_TAG_CLAIMS` and `SESSION_NAME_CLAIMS`, plus the `userid` claim, which this application uses itself.
 
 ### Redirect URIs
 This application will host a static list of redirect URIs including those used by itself and those used by other Service Catalog components which authenticate using Synapse as an identity provider. The `REDIRECT_URIS` parameter is a comma separated list of OAuth redirect URIs and the list appears as a JSON Array at the URI, `/redirect_uris.json`.
