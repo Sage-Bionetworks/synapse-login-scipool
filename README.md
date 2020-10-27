@@ -18,6 +18,9 @@ SESSION_TIMEOUT_SECONDS=43200
 SESSION_NAME_CLAIMS=userid
 SESSION_TAG_CLAIMS=sub,userid,user_name
 REDIRECT_URIS=https://.....,https://....
+MARKETPLACE_PRODUCT_CODE_SC=xxxxxx
+MARKETPLACE_ID_DYNAMO_TABLE_NAME=xxxxxx
+
 ```
 
 The name of the properties file, `global.properties` can be overridden by setting an environment variable or 
@@ -48,12 +51,21 @@ https://rest-docs.synapse.org/rest/org/sagebionetworks/repo/model/oauth/OIDCClai
 used to define tags in the AWS session.  The tags are names `synapse-`<claim name>, where <claim name> is the name of the claim given in the config file.
 
 The `SESSION_NAME_CLAIMS` config is also a comma separated list of claims, but used to define the session name, as a colon delimited list of claim values. For example: setting `SESSION_NAME_CLAIMS=userid,email` will display
-`ServiceCatalogEndusers/1234567:joe.smith@gmail.com` in AWS. 
+`ServiceCatalogEndusers/1234567:joe.smith@gmail.com` in AWS.
+
+Note:  The list of claims requested from Synapse is the union of the two lists, `SESSION_TAG_CLAIMS` and `SESSION_NAME_CLAIMS`, plus the `userid` claim, which this application uses itself.
 
 ### Redirect URIs
 This application will host a static list of redirect URIs including those used by itself and those used by other Service Catalog components which authenticate using Synapse as an identity provider. The `REDIRECT_URIS` parameter is a comma separated list of OAuth redirect URIs and the list appears as a JSON Array at the URI, `/redirect_uris.json`.
 
 Technically this application establishes the [sector identifier](https://openid.net/specs/openid-connect-registration-1_0.html#SectorIdentifierValidation) for all the OAuth clients in the system, ensuring they all receive the same paired pseudonymous identifier for each Synapse user.  When registering as an OIDC client with Synapse, include `sector_identifier_uri=<this_host>/redirect_uris.json`.
+
+
+### Marketplace product code
+The code for the AWS Marketplace product being subscribed to.
+
+### Marketplace ID Dynamo Table Name
+The name of the Dynamo table that holds the mapping from Synapse users to AWS Marketplace subscriptions.
 
 ## Building the app
 This is a java application which we build with standard [apache maven](https://maven.apache.org/what-is-maven.html)
