@@ -143,18 +143,22 @@ public class Auth extends HttpServlet {
 	private MarketplaceMeteringHelper marketplaceMeteringHelper = null;
 
 	public Auth() {
-		String tableName= getProperty(MARKETPLACE_ID_DYNAMO_TABLE_NAME_PARAMETER);
-		init(new DynamoDbHelper(tableName), new MarketplaceMeteringHelper());
+		initialize();
+		String tableName = getProperty(MARKETPLACE_ID_DYNAMO_TABLE_NAME_PARAMETER);
+		this.dynamoDbHelper = new DynamoDbHelper(tableName);
+		this.marketplaceMeteringHelper = new MarketplaceMeteringHelper();
 	}
 	
 	/*
 	 * For testing
 	 */
 	public Auth(DynamoDbHelper dynamoDbHelper, MarketplaceMeteringHelper marketplaceMeteringHelper) {
-		init(dynamoDbHelper, marketplaceMeteringHelper);
+		initialize();
+		this.dynamoDbHelper = dynamoDbHelper;
+		this.marketplaceMeteringHelper = marketplaceMeteringHelper;
 	}
 		
-	private void init(DynamoDbHelper dynamoDbHelper, MarketplaceMeteringHelper marketplaceMeteringHelper) {
+	private void initialize() {
 		initProperties();
 		appVersion = initAppVersion();
 		ssmParameterCache = new Properties();
@@ -167,8 +171,6 @@ public class Auth extends HttpServlet {
 		teamToRoleMap = getTeamToRoleMap();
 		awsRegion = getProperty(AWS_REGION_PARAMETER);
 		awsConsoleUrl = String.format(AWS_CONSOLE_URL_TEMPLATE, awsRegion);
-		this.dynamoDbHelper = dynamoDbHelper;
-		this.marketplaceMeteringHelper = marketplaceMeteringHelper;
 	}
 	
 	public List<String> getCommaSeparatedPropertyAsList(String propertyName, String defaultValue) {
