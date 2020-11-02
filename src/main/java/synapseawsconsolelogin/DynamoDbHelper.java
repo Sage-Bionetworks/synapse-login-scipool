@@ -1,7 +1,6 @@
 package synapseawsconsolelogin;
 
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -17,9 +16,9 @@ import com.amazonaws.services.dynamodbv2.model.PutItemRequest;
 
 public class DynamoDbHelper {
 	
-	private static final String USER_ID = "userId";
-	private static final String PRODUCT_CODE = "productCode";
-	private static final String CUSTOMER_ID = "marketplaceCustomerId";
+	private static final String USER_ID = "SynapseUserId";
+	private static final String PRODUCT_CODE = "ProductCode";
+	private static final String CUSTOMER_ID = "MarketplaceCustomerId";
 	
 	private AmazonDynamoDB amazonDynamoDB;
 	
