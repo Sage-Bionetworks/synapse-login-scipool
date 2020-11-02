@@ -62,9 +62,9 @@ public class DynamoDbHelperTest {
 		
 		Map<String, AttributeValue> itemToAdd = putItemRequestCaptor.getValue().getItem();
 		
-		assertEquals(userId, itemToAdd.get("userId").getS());
-		assertEquals(productCode, itemToAdd.get("productCode").getS());
-		assertEquals(customerIdentifier, itemToAdd.get("marketplaceCustomerId").getS());
+		assertEquals(userId, itemToAdd.get("SynapseUserId").getS());
+		assertEquals(productCode, itemToAdd.get("ProductCode").getS());
+		assertEquals(customerIdentifier, itemToAdd.get("MarketplaceCustomerId").getS());
 	}
 
 	@Test
@@ -75,7 +75,7 @@ public class DynamoDbHelperTest {
 		
 		GetItemResult getItemResult = new GetItemResult();
 		AttributeValue attributeValue = new AttributeValue().withS(customerId);
-		getItemResult.addItemEntry("marketplaceCustomerId", attributeValue);
+		getItemResult.addItemEntry("MarketplaceCustomerId", attributeValue);
 		when(mockAmazonDynamoDB.getItem((GetItemRequest)any())).thenReturn(getItemResult);
 
 		// method under test
@@ -86,9 +86,9 @@ public class DynamoDbHelperTest {
 		GetItemRequest getItemRequest = getItemRequestCaptor.getValue();
 		
 		assertEquals(TABLE_NAME, getItemRequest.getTableName());
-		assertEquals(userId, getItemRequest.getKey().get("userId").getS());
+		assertEquals(userId, getItemRequest.getKey().get("SynapseUserId").getS());
 		
-		List<String> expectedAttributes = Arrays.asList(new String[] {"productCode", "marketplaceCustomerId"});
+		List<String> expectedAttributes = Arrays.asList(new String[] {"ProductCode", "MarketplaceCustomerId"});
 		assertEquals(expectedAttributes, getItemRequest.getAttributesToGet());
 		assertTrue(getItemRequest.getConsistentRead());
 		
@@ -112,9 +112,9 @@ public class DynamoDbHelperTest {
 		GetItemRequest getItemRequest = getItemRequestCaptor.getValue();
 		
 		assertEquals(TABLE_NAME, getItemRequest.getTableName());
-		assertEquals(userId, getItemRequest.getKey().get("userId").getS());
+		assertEquals(userId, getItemRequest.getKey().get("SynapseUserId").getS());
 		
-		List<String> expectedAttributes = Arrays.asList(new String[] {"productCode", "marketplaceCustomerId"});
+		List<String> expectedAttributes = Arrays.asList(new String[] {"ProductCode", "MarketplaceCustomerId"});
 		assertEquals(expectedAttributes, getItemRequest.getAttributesToGet());
 		assertTrue(getItemRequest.getConsistentRead());
 		
