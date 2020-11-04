@@ -1,17 +1,26 @@
 package synapseawsconsolelogin;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 import static org.mockito.Matchers.anyString;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.io.UnsupportedEncodingException;
+import java.net.URLEncoder;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import javax.servlet.ServletOutputStream;
 import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
 
 import org.apache.commons.lang.StringUtils;
 import org.junit.After;
@@ -26,6 +35,7 @@ import com.amazonaws.AmazonClientException;
 import com.amazonaws.SdkClientException;
 import com.amazonaws.auth.AWSCredentials;
 import com.amazonaws.auth.DefaultAWSCredentialsProviderChain;
+import com.amazonaws.services.marketplacemetering.model.ResolveCustomerResult;
 import com.amazonaws.services.securitytoken.model.AssumeRoleRequest;
 import com.amazonaws.services.securitytoken.model.Credentials;
 import com.amazonaws.services.securitytoken.model.Tag;
@@ -33,7 +43,6 @@ import com.amazonaws.services.simplesystemsmanagement.AWSSimpleSystemsManagement
 import com.amazonaws.services.simplesystemsmanagement.AWSSimpleSystemsManagementClientBuilder;
 import com.amazonaws.services.simplesystemsmanagement.model.ParameterType;
 import com.amazonaws.services.simplesystemsmanagement.model.PutParameterRequest;
-import com.google.appengine.repackaged.com.google.common.collect.ImmutableList;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.impl.DefaultClaims;
@@ -43,12 +52,25 @@ import io.jsonwebtoken.impl.DefaultClaims;
 public class AuthTest {
 	
 	private static final String TEST_PROPERTY_NAME = "testPropertyName";
+	private static final String USER_ID = "101";
 
 	@Mock
-	private HttpServletRequest req;
+	private HttpServletRequest mockServletRequest;
+	
+	@Mock
+	private HttpServletResponse mockServletResponse;
+	
+	@Mock
+	private ServletOutputStream mockServletOutputStream;
 	
 	@Mock
 	private HttpGetExecutor mockHttpGetExecutor;
+	
+	@Mock
+	private DynamoDbHelper mockDynamoDbHelper;
+	
+	@Mock
+	private MarketplaceMeteringHelper mockMarketplaceMeteringHelper;
 	
 	@Before
 	public void before() {
@@ -65,12 +87,14 @@ public class AuthTest {
 		System.clearProperty("AWS_REGION");
 		System.clearProperty("SESSION_TAG_CLAIMS");
 		System.clearProperty("SESSION_NAME_CLAIMS");
+		System.clearProperty("SYNAPSE_OAUTH_CLIENT_ID");
 		System.clearProperty(TEST_PROPERTY_NAME);
+		System.clearProperty("MARKETPLACE_PRODUCT_CODE");
 	}
 	
 	@Test
 	public void testReadTeamToArnMap() {
-		Auth auth = new Auth();
+		Auth auth = new Auth(mockDynamoDbHelper, mockMarketplaceMeteringHelper);
 		
 		Map<String,String> map = auth.getTeamToRoleMap();
 		assertEquals(2, map.size());
@@ -80,18 +104,200 @@ public class AuthTest {
 	}
 	
 	@Test
-	public void testGetAuthUrl() {
-		Auth auth = new Auth();
+	public void testGetAuthUrl() throws UnsupportedEncodingException {
+		Auth auth = new Auth(mockDynamoDbHelper, mockMarketplaceMeteringHelper);
 		
 		String expected = "https://signin.synapse.org?response_type=code&client_id=%s&redirect_uri=%s&claims={\"id_token\":{\"team\":{\"values\":[\"123456\",\"345678\"]},\"user_name\":{\"essential\":true},\"userid\":{\"essential\":true}},\"userinfo\":{\"team\":{\"values\":[\"123456\",\"345678\"]},\"user_name\":{\"essential\":true},\"userid\":{\"essential\":true}}}";
-		String actual = auth.getAuthorizeUrl();
+		String actual = auth.getAuthorizeUrl(null);
 		assertEquals(expected, actual);
+	}
+	
+	@Test
+	public void testGetAuthUrlUserIDAlwaysIncluded() throws UnsupportedEncodingException {
+		// removing 'userId' from SESSION_NAME_CLAIMS and SESSION_TAG_CLAIMS doesn't change anything userId is always requested
+		System.setProperty("SESSION_NAME_CLAIMS", "");
+		System.setProperty("SESSION_TAG_CLAIMS", "user_name,team");
+		Auth auth = new Auth(mockDynamoDbHelper, mockMarketplaceMeteringHelper);
+		
+		String expected = "https://signin.synapse.org?response_type=code&client_id=%s&redirect_uri=%s&claims={\"id_token\":{\"team\":{\"values\":[\"123456\",\"345678\"]},\"user_name\":{\"essential\":true},\"userid\":{\"essential\":true}},\"userinfo\":{\"team\":{\"values\":[\"123456\",\"345678\"]},\"user_name\":{\"essential\":true},\"userid\":{\"essential\":true}}}";
+		String actual = auth.getAuthorizeUrl(null);
+		assertEquals(expected, actual);
+	}
+	
+	@Test
+	public void testGetAuthUrlWithState() throws UnsupportedEncodingException {
+		Auth auth = new Auth(mockDynamoDbHelper, mockMarketplaceMeteringHelper);
+		
+		String expected = "https://signin.synapse.org?response_type=code&client_id=%s&redirect_uri=%s&claims={\"id_token\":{\"team\":{\"values\":[\"123456\",\"345678\"]},\"user_name\":{\"essential\":true},\"userid\":{\"essential\":true}},\"userinfo\":{\"team\":{\"values\":[\"123456\",\"345678\"]},\"user_name\":{\"essential\":true},\"userid\":{\"essential\":true}}}&state=state";
+		String actual = auth.getAuthorizeUrl("state");
+		assertEquals(expected, actual);
+	}
+	
+	@Test
+	public void testHandleSubscribe() throws Exception {
+		System.setProperty("SYNAPSE_OAUTH_CLIENT_ID", "101");		
+		Auth auth = new Auth(mockDynamoDbHelper, mockMarketplaceMeteringHelper);
+		
+		String marketplaceToken = "marketplace-token";
+		String baseUrl = "https://baseurl";
+		
+		StringBuffer sb = new StringBuffer();
+		sb.append(baseUrl);
+		when(mockServletRequest.getRequestURL()).thenReturn(sb);
+		when(mockServletRequest.getRequestURI()).thenReturn(baseUrl);
+		when(mockServletRequest.getHeader("x-amzn-marketplace-token")).thenReturn(marketplaceToken);
+		
+		// method under test
+		auth.handleSubscribe(mockServletRequest, mockServletResponse);
+		
+		String expectedRedirUrl = "https://signin.synapse.org?response_type=code&client_id=101&redirect_uri=%2Fsynapse&claims={\"id_token\":{\"team\":{\"values\":[\"123456\",\"345678\"]},\"user_name\":{\"essential\":true},\"userid\":{\"essential\":true}},\"userinfo\":{\"team\":{\"values\":[\"123456\",\"345678\"]},\"user_name\":{\"essential\":true},\"userid\":{\"essential\":true}}}&state=marketplace-token&scope=openid";
+		verify(mockServletResponse).setHeader("Location", expectedRedirUrl);
+		verify(mockServletResponse).setStatus(303);
+	}
+	
+	@Test
+	public void testHandleSubscribeNoMarketplaceToken() throws Exception {	
+		Auth auth = new Auth(mockDynamoDbHelper, mockMarketplaceMeteringHelper);
+		
+		when(mockServletResponse.getOutputStream()).thenReturn(mockServletOutputStream);
+		
+		// method under test
+		auth.handleSubscribe(mockServletRequest, mockServletResponse);
+		
+		verify(mockServletResponse).setStatus(400);
+		verify(mockServletOutputStream).println("Missing x-amzn-marketplace-token header");
+	}
+	
+	@Test
+	public void testRegisterCustomer() throws Exception {
+		String marketplaceProductCode = "product-code";
+		System.setProperty("MARKETPLACE_PRODUCT_CODE", marketplaceProductCode);
+		Auth auth = new Auth(mockDynamoDbHelper, mockMarketplaceMeteringHelper);
+		
+		String marketplaceToken = "marketplace/token";
+		String urlEncodedMarketplaceToken = URLEncoder.encode(marketplaceToken, "UTF-8");
+		
+		when(mockServletRequest.getParameter("state")).thenReturn(urlEncodedMarketplaceToken);
+		ResolveCustomerResult resolveCustomerResult = new ResolveCustomerResult();
+		String customerIdentifier = "customer-id";
+		resolveCustomerResult.setCustomerIdentifier(customerIdentifier);
+		resolveCustomerResult.setProductCode(marketplaceProductCode);
+		when(mockMarketplaceMeteringHelper.resolveCustomer(marketplaceToken)).thenReturn(resolveCustomerResult);
+		
+		when(mockDynamoDbHelper.getMarketplaceCustomerIdForUser(USER_ID)).thenReturn(null);
+		
+		// method under test
+		boolean b = auth.registerCustomer(mockServletRequest, mockServletResponse, USER_ID);
+		
+		assertTrue(b);
+		verify(mockMarketplaceMeteringHelper).resolveCustomer(marketplaceToken);
+		verify(mockDynamoDbHelper).getMarketplaceCustomerIdForUser(USER_ID);
+		verify(mockDynamoDbHelper).addMarketplaceId(USER_ID, marketplaceProductCode, customerIdentifier);
+	}
+	
+	@Test
+	public void testRegisterCustomerNoToken() throws Exception {
+		Auth auth = new Auth(mockDynamoDbHelper, mockMarketplaceMeteringHelper);
+		
+		when(mockServletRequest.getParameter("state")).thenReturn(null);
+		
+		// method under test
+		boolean b = auth.registerCustomer(mockServletRequest, mockServletResponse, USER_ID);
+		
+		assertTrue(b);
+		verify(mockMarketplaceMeteringHelper, never()).resolveCustomer(anyString());
+		verify(mockDynamoDbHelper, never()).getMarketplaceCustomerIdForUser(anyString());
+		verify(mockDynamoDbHelper, never()).addMarketplaceId(anyString(), anyString(), anyString());
+	}
+	
+	@Test
+	public void testRegisterCustomerWrongProductCode() throws Exception {
+		String marketplaceProductCode = "product-code";
+		System.setProperty("MARKETPLACE_PRODUCT_CODE_SC", marketplaceProductCode);
+		Auth auth = new Auth(mockDynamoDbHelper, mockMarketplaceMeteringHelper);
+		
+		String marketplaceToken = "marketplace/token";
+		String urlEncodedMarketplaceToken = URLEncoder.encode(marketplaceToken, "UTF-8");
+		
+		when(mockServletRequest.getParameter("state")).thenReturn(urlEncodedMarketplaceToken);
+		ResolveCustomerResult resolveCustomerResult = new ResolveCustomerResult();
+		String customerIdentifier = "customer-id";
+		resolveCustomerResult.setCustomerIdentifier(customerIdentifier);
+		resolveCustomerResult.setProductCode("some other product code");
+		when(mockMarketplaceMeteringHelper.resolveCustomer(marketplaceToken)).thenReturn(resolveCustomerResult);
+		
+		
+		// method under test
+		try {
+			auth.registerCustomer(mockServletRequest, mockServletResponse, USER_ID);
+			fail("Expected RuntimeException");
+		} catch (RuntimeException e) {
+			// as expected
+		}
+		
+		verify(mockMarketplaceMeteringHelper).resolveCustomer(marketplaceToken);
+		verify(mockDynamoDbHelper, never()).getMarketplaceCustomerIdForUser(anyString());
+		verify(mockDynamoDbHelper, never()).addMarketplaceId(anyString(), anyString(), anyString());
+	}
+	
+	@Test
+	public void testRegisterCustomerAlreadyRegistered() throws Exception {
+		String marketplaceProductCode = "product-code";
+		System.setProperty("MARKETPLACE_PRODUCT_CODE", marketplaceProductCode);
+		Auth auth = new Auth(mockDynamoDbHelper, mockMarketplaceMeteringHelper);
+		
+		String marketplaceToken = "marketplace/token";
+		String urlEncodedMarketplaceToken = URLEncoder.encode(marketplaceToken, "UTF-8");
+		
+		when(mockServletRequest.getParameter("state")).thenReturn(urlEncodedMarketplaceToken);
+		ResolveCustomerResult resolveCustomerResult = new ResolveCustomerResult();
+		String customerIdentifier = "customer-id";
+		resolveCustomerResult.setCustomerIdentifier(customerIdentifier);
+		resolveCustomerResult.setProductCode(marketplaceProductCode);
+		when(mockMarketplaceMeteringHelper.resolveCustomer(marketplaceToken)).thenReturn(resolveCustomerResult);
+		
+		when(mockDynamoDbHelper.getMarketplaceCustomerIdForUser(USER_ID)).thenReturn(customerIdentifier);
+		
+		// method under test
+		boolean b = auth.registerCustomer(mockServletRequest, mockServletResponse, USER_ID);
+		
+		assertTrue(b);
+		verify(mockMarketplaceMeteringHelper).resolveCustomer(marketplaceToken);
+		verify(mockDynamoDbHelper).getMarketplaceCustomerIdForUser(USER_ID);
+		verify(mockDynamoDbHelper, never()).addMarketplaceId(anyString(), anyString(), anyString());
+	}
+	
+	@Test
+	public void testRegisterCustomerAlreadyRegisteredDifferentCustomer() throws Exception {
+		String marketplaceProductCode = "product-code";
+		System.setProperty("MARKETPLACE_PRODUCT_CODE", marketplaceProductCode);
+		Auth auth = new Auth(mockDynamoDbHelper, mockMarketplaceMeteringHelper);
+		
+		String marketplaceToken = "marketplace/token";
+		String urlEncodedMarketplaceToken = URLEncoder.encode(marketplaceToken, "UTF-8");
+		
+		when(mockServletRequest.getParameter("state")).thenReturn(urlEncodedMarketplaceToken);
+		ResolveCustomerResult resolveCustomerResult = new ResolveCustomerResult();
+		String customerIdentifier = "customer-id";
+		resolveCustomerResult.setCustomerIdentifier(customerIdentifier);
+		resolveCustomerResult.setProductCode(marketplaceProductCode);
+		when(mockMarketplaceMeteringHelper.resolveCustomer(marketplaceToken)).thenReturn(resolveCustomerResult);
+		
+		when(mockDynamoDbHelper.getMarketplaceCustomerIdForUser(USER_ID)).thenReturn("some other customer id");
+		
+		// method under test
+		boolean b = auth.registerCustomer(mockServletRequest, mockServletResponse, USER_ID);
+		
+		assertFalse(b);
+		verify(mockMarketplaceMeteringHelper).resolveCustomer(marketplaceToken);
+		verify(mockDynamoDbHelper).getMarketplaceCustomerIdForUser(USER_ID);
+		verify(mockDynamoDbHelper, never()).addMarketplaceId(anyString(), anyString(), anyString());
 	}
 	
 	@Test
 	public void testGetPropertyFromGlobalPropertiesFile() {
 		String value = "testPropertyValue";
-		Auth auth = new Auth();
+		Auth auth = new Auth(mockDynamoDbHelper, mockMarketplaceMeteringHelper);
 		
 		assertEquals(value, auth.getProperty(TEST_PROPERTY_NAME));
 		
@@ -101,14 +307,14 @@ public class AuthTest {
 	public void testGetPropertyOverridingFileWithProperty() {
 		String value = "someOtherValue";
 		System.setProperty(TEST_PROPERTY_NAME, value);
-		Auth auth = new Auth();
+		Auth auth = new Auth(mockDynamoDbHelper, mockMarketplaceMeteringHelper);
 		assertEquals(value, auth.getProperty(TEST_PROPERTY_NAME));
 	}
 
 	@Test
 	public void testGetMissingOptionalProperty() {
 		Assume.assumeTrue(System.getProperty("SKIP_AWS")==null);
-		Auth auth = new Auth();
+		Auth auth = new Auth(mockDynamoDbHelper, mockMarketplaceMeteringHelper);
 		assertNull(auth.getProperty("undefined-property", false));
 	}
 	
@@ -128,7 +334,7 @@ public class AuthTest {
 		String ssmKey = UUID.randomUUID().toString();
 		String propertyValue = UUID.randomUUID().toString();
 		
-		Auth auth = new Auth();
+		Auth auth = new Auth(mockDynamoDbHelper, mockMarketplaceMeteringHelper);
 		
 		// the property has NOT been stored yet
 		assertNull(auth.getProperty(propertyName, false));
@@ -169,7 +375,7 @@ public class AuthTest {
 		String propertyName = UUID.randomUUID().toString();
 		String ssmKey = UUID.randomUUID().toString();
 
-		Auth auth = new Auth();
+		Auth auth = new Auth(mockDynamoDbHelper, mockMarketplaceMeteringHelper);
 
 		// the property name hasn't been stored at all
 		assertNull(auth.getProperty(propertyName, false));
@@ -184,8 +390,8 @@ public class AuthTest {
 	public void testGetConsoleLoginURL() throws Exception {
 		StringBuffer urlBuffer = new StringBuffer();
 		urlBuffer.append("https:www.foo.com/bar");
-		when(req.getRequestURL()).thenReturn(urlBuffer);
-		when(req.getRequestURI()).thenReturn("/bar");
+		when(mockServletRequest.getRequestURL()).thenReturn(urlBuffer);
+		when(mockServletRequest.getRequestURI()).thenReturn("/bar");
 		when(mockHttpGetExecutor.executeHttpGet(anyString())).thenReturn("{\"SigninToken\":\"token\"}");
 		
 		Credentials credentials = new Credentials();
@@ -193,10 +399,10 @@ public class AuthTest {
 		credentials.setSecretAccessKey("keySecret");
 		credentials.setSessionToken("token");
 		
-		Auth auth = new Auth();
+		Auth auth = new Auth(mockDynamoDbHelper, mockMarketplaceMeteringHelper);
 		
 		// method under test
-		String actual = auth.getConsoleLoginURL(req, credentials, mockHttpGetExecutor);
+		String actual = auth.getConsoleLoginURL(mockServletRequest, credentials, mockHttpGetExecutor);
 		
 		String expected = "https://signin.aws.amazon.com/federation?Action=login&SigninToken=token"+
 				 "&Issuer=https%3Awww.foo.com&Destination=https%3A%2F%2Fus-east-1.console.aws.amazon.com%2Fservicecatalog%2Fhome%3Fregion%3Dus-east-1%23%2Fproducts";
@@ -213,8 +419,11 @@ public class AuthTest {
 		System.setProperty("SESSION_NAME_CLAIMS", "userid,user_name");
 		
 		Claims claims = new DefaultClaims();
-		Auth auth = new Auth();
-		claims.put("team", ImmutableList.of("888", "999"));
+		Auth auth = new Auth(mockDynamoDbHelper, mockMarketplaceMeteringHelper);
+		List<String> teams = new ArrayList<String>();
+		teams.add("888");
+		teams.add("999");
+		claims.put("team", teams);
 		claims.put("userid", userid);
 		claims.put("user_name", "aname");
 
@@ -242,7 +451,7 @@ public class AuthTest {
 
 	@Test
 	public void testInitApp() {
-		Auth auth = new Auth();
+		Auth auth = new Auth(mockDynamoDbHelper, mockMarketplaceMeteringHelper);
 		String version = auth.getAppVersion();
 		assertEquals(String.format("%1$s-%2$s", "20200201-11:55", "0.1-3-g8eda288"), version);
 	}
@@ -251,9 +460,11 @@ public class AuthTest {
 	public void testRedirectURIs() {
 		System.setProperty("REDIRECT_URIS", "foo,bar");
 		
-		List<String> expected = ImmutableList.of("foo", "bar");
+		List<String> expected = new ArrayList<String>();
+		expected.add("foo");
+		expected.add("bar");
 		
-		Auth auth = new Auth();
+		Auth auth = new Auth(mockDynamoDbHelper, mockMarketplaceMeteringHelper);
 		
 		assertEquals(expected, auth.getRedirectURIs("baz"));
 	}
@@ -262,7 +473,7 @@ public class AuthTest {
 	public void testRedirectURIsDefault() {
 		System.clearProperty("REDIRECT_URIS");
 		
-		Auth auth = new Auth();
+		Auth auth = new Auth(mockDynamoDbHelper, mockMarketplaceMeteringHelper);
 		
 		assertEquals(Collections.singletonList("baz"), auth.getRedirectURIs("baz"));
 	}
