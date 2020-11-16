@@ -145,7 +145,7 @@ public class AuthTest {
 		sb.append(baseUrl);
 		when(mockServletRequest.getRequestURL()).thenReturn(sb);
 		when(mockServletRequest.getRequestURI()).thenReturn(baseUrl);
-		when(mockServletRequest.getHeader("x-amzn-marketplace-token")).thenReturn(marketplaceToken);
+		when(mockServletRequest.getParameter("x-amzn-marketplace-token")).thenReturn(marketplaceToken);
 		
 		// method under test
 		auth.handleSubscribe(mockServletRequest, mockServletResponse);
@@ -165,7 +165,7 @@ public class AuthTest {
 		auth.handleSubscribe(mockServletRequest, mockServletResponse);
 		
 		verify(mockServletResponse).setStatus(400);
-		verify(mockServletOutputStream).println("Missing x-amzn-marketplace-token header");
+		verify(mockServletOutputStream).println("Cannot continue subscription: Missing x-amzn-marketplace-token parameter.");
 	}
 	
 	@Test

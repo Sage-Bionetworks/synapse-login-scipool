@@ -47,9 +47,6 @@ import com.amazonaws.AmazonClientException;
 import com.amazonaws.SdkClientException;
 import com.amazonaws.auth.DefaultAWSCredentialsProviderChain;
 import com.amazonaws.regions.Regions;
-import com.amazonaws.services.marketplacemetering.AWSMarketplaceMetering;
-import com.amazonaws.services.marketplacemetering.AWSMarketplaceMeteringClientBuilder;
-import com.amazonaws.services.marketplacemetering.model.ResolveCustomerRequest;
 import com.amazonaws.services.marketplacemetering.model.ResolveCustomerResult;
 import com.amazonaws.services.securitytoken.AWSSecurityTokenService;
 import com.amazonaws.services.securitytoken.AWSSecurityTokenServiceClientBuilder;
@@ -233,9 +230,9 @@ public class Auth extends HttpServlet {
 	 * as a Marketplace product.  Passes the temporary 'marketplace token' as the OAuth state parameter.
 	 */
 	public void handleSubscribe(HttpServletRequest req, HttpServletResponse resp) throws IOException {
-		String awsMarketPlaceToken = req.getHeader("x-amzn-marketplace-token");
+		String awsMarketPlaceToken = req.getParameter("x-amzn-marketplace-token");
 		if (StringUtils.isEmpty(awsMarketPlaceToken)) {
-			String errorMessage = "Missing x-amzn-marketplace-token header";
+			String errorMessage = "Cannot continue subscription: Missing x-amzn-marketplace-token parameter.";
 			logger.log(Level.SEVERE, errorMessage);
 			resp.setContentType("text/plain");
 			try (ServletOutputStream os=resp.getOutputStream()) {
