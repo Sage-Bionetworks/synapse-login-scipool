@@ -189,10 +189,9 @@ public class Auth extends HttpServlet {
 	}
 
 	/**
-	 * @param state a value to be returned to this application upon successful login (as defined by the OAuth 'code flow')
 	 * @return the URL to redirect the client to for OAuth login.
 	 */
-	public String getAuthorizeUrl(String state) throws UnsupportedEncodingException {
+	public String getAuthorizeUrl() throws UnsupportedEncodingException {
 		// userid claim is used by this application so it always must be included in the list of claims requested from Synapse
 		Set<String> allClaims = new TreeSet<String>(Collections.singleton(USER_ID_CLAIM_NAME));
 		allClaims.addAll(getSessionClaimNames());
@@ -206,8 +205,7 @@ public class Auth extends HttpServlet {
 		}
 		String claims = String.format(CLAIMS_TEMPLATE, StringUtils.join(teamToRoleMap.keySet(), "\",\""), sb.toString());
 		return "https://signin.synapse.org?response_type=code&client_id=%s&redirect_uri=%s&"+
-		"claims={\"id_token\":"+claims+",\"userinfo\":"+claims+"}"+
-		(StringUtils.isNotEmpty(state)?"&"+STATE+"="+URLEncoder.encode(state, UTF8):"");
+		"claims={\"id_token\":"+claims+",\"userinfo\":"+claims+"}";
 	}
 
 	@Override
@@ -242,9 +240,9 @@ public class Auth extends HttpServlet {
 		} else {
 			// log in with Synapse, passing along the marketplace token.
 			String redirectBackUrl = getRedirectBackUrlSynapse(req);
-			String redirectUrl = new OAuth2Api(getAuthorizeUrl(awsMarketPlaceToken), TOKEN_URL).
+			String redirectUrl = new OAuth2Api(getAuthorizeUrl(), TOKEN_URL).
 					getAuthorizationUrl(new OAuthConfig(getClientIdSynapse(), null, redirectBackUrl, null, OPENID, null));
-			resp.setHeader(LOCATION, redirectUrl);
+			resp.setHeader(LOCATION, redirectUrl+"&"+STATE+"="+URLEncoder.encode(awsMarketPlaceToken, UTF8));
 			resp.setStatus(303);
 		}
 	}
@@ -445,13 +443,13 @@ public class Auth extends HttpServlet {
 		if (uri.equals("/") || StringUtils.isEmpty(uri)) {
 			// this is the initial redirect to go log in with Synapse
 			String redirectBackUrl = getRedirectBackUrlSynapse(req);
-			String redirectUrl = new OAuth2Api(getAuthorizeUrl(null), TOKEN_URL).
+			String redirectUrl = new OAuth2Api(getAuthorizeUrl(), TOKEN_URL).
 					getAuthorizationUrl(new OAuthConfig(getClientIdSynapse(), null, redirectBackUrl, null, OPENID, null));
 			resp.setHeader(LOCATION, redirectUrl);
 			resp.setStatus(303);
 		} else if (uri.equals(REDIRECT_URI)) {
 			// this is the second step, after logging in to Synapse
-			service = (OAuth2Api.BasicOAuth2Service)(new OAuth2Api(getAuthorizeUrl(null), TOKEN_URL)).
+			service = (OAuth2Api.BasicOAuth2Service)(new OAuth2Api(getAuthorizeUrl(), TOKEN_URL)).
 					createService(new OAuthConfig(getClientIdSynapse(), getClientSecretSynapse(), getRedirectBackUrlSynapse(req), null, null, null));
 			String authorizationCode = req.getParameter("code");
 			Token idToken = null;

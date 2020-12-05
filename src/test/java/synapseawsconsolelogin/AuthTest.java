@@ -108,7 +108,7 @@ public class AuthTest {
 		Auth auth = new Auth(mockDynamoDbHelper, mockMarketplaceMeteringHelper);
 		
 		String expected = "https://signin.synapse.org?response_type=code&client_id=%s&redirect_uri=%s&claims={\"id_token\":{\"team\":{\"values\":[\"123456\",\"345678\"]},\"user_name\":{\"essential\":true},\"userid\":{\"essential\":true}},\"userinfo\":{\"team\":{\"values\":[\"123456\",\"345678\"]},\"user_name\":{\"essential\":true},\"userid\":{\"essential\":true}}}";
-		String actual = auth.getAuthorizeUrl(null);
+		String actual = auth.getAuthorizeUrl();
 		assertEquals(expected, actual);
 	}
 	
@@ -120,16 +120,7 @@ public class AuthTest {
 		Auth auth = new Auth(mockDynamoDbHelper, mockMarketplaceMeteringHelper);
 		
 		String expected = "https://signin.synapse.org?response_type=code&client_id=%s&redirect_uri=%s&claims={\"id_token\":{\"team\":{\"values\":[\"123456\",\"345678\"]},\"user_name\":{\"essential\":true},\"userid\":{\"essential\":true}},\"userinfo\":{\"team\":{\"values\":[\"123456\",\"345678\"]},\"user_name\":{\"essential\":true},\"userid\":{\"essential\":true}}}";
-		String actual = auth.getAuthorizeUrl(null);
-		assertEquals(expected, actual);
-	}
-	
-	@Test
-	public void testGetAuthUrlWithState() throws UnsupportedEncodingException {
-		Auth auth = new Auth(mockDynamoDbHelper, mockMarketplaceMeteringHelper);
-		
-		String expected = "https://signin.synapse.org?response_type=code&client_id=%s&redirect_uri=%s&claims={\"id_token\":{\"team\":{\"values\":[\"123456\",\"345678\"]},\"user_name\":{\"essential\":true},\"userid\":{\"essential\":true}},\"userinfo\":{\"team\":{\"values\":[\"123456\",\"345678\"]},\"user_name\":{\"essential\":true},\"userid\":{\"essential\":true}}}&state=state";
-		String actual = auth.getAuthorizeUrl("state");
+		String actual = auth.getAuthorizeUrl();
 		assertEquals(expected, actual);
 	}
 	
@@ -138,7 +129,7 @@ public class AuthTest {
 		System.setProperty("SYNAPSE_OAUTH_CLIENT_ID", "101");		
 		Auth auth = new Auth(mockDynamoDbHelper, mockMarketplaceMeteringHelper);
 		
-		String marketplaceToken = "marketplace-token";
+		String marketplaceToken = "market/place/token==";
 		String baseUrl = "https://baseurl";
 		
 		StringBuffer sb = new StringBuffer();
@@ -150,7 +141,8 @@ public class AuthTest {
 		// method under test
 		auth.handleSubscribe(mockServletRequest, mockServletResponse);
 		
-		String expectedRedirUrl = "https://signin.synapse.org?response_type=code&client_id=101&redirect_uri=%2Fsynapse&claims={\"id_token\":{\"team\":{\"values\":[\"123456\",\"345678\"]},\"user_name\":{\"essential\":true},\"userid\":{\"essential\":true}},\"userinfo\":{\"team\":{\"values\":[\"123456\",\"345678\"]},\"user_name\":{\"essential\":true},\"userid\":{\"essential\":true}}}&state=marketplace-token&scope=openid";
+		String expectedRedirUrl = "https://signin.synapse.org?response_type=code&client_id=101&redirect_uri=%2Fsynapse&claims={\"id_token\":{\"team\":{\"values\":[\"123456\",\"345678\"]},\"user_name\":{\"essential\":true},\"userid\":{\"essential\":true}},\"userinfo\":{\"team\":{\"values\":[\"123456\",\"345678\"]},\"user_name\":{\"essential\":true},\"userid\":{\"essential\":true}}}"
+			 +"&scope=openid&state="+URLEncoder.encode(marketplaceToken, "utf8");
 		verify(mockServletResponse).setHeader("Location", expectedRedirUrl);
 		verify(mockServletResponse).setStatus(303);
 	}
