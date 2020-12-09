@@ -11,7 +11,6 @@ import java.io.UnsupportedEncodingException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLConnection;
-import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -403,15 +402,14 @@ public class Auth extends HttpServlet {
 	 */
 	public boolean registerCustomer(HttpServletRequest req, HttpServletResponse resp, String userId) throws IOException {
 		// get the 'state' request parameter
-		String urlEncodedAwsMarketPlaceToken = req.getParameter(STATE);
-		if (StringUtils.isEmpty(urlEncodedAwsMarketPlaceToken)) {
+		String awsMarketPlaceToken = req.getParameter(STATE);
+		if (StringUtils.isEmpty(awsMarketPlaceToken)) {
 			// We pass through here both for regular login and when registering a customer who purchased
 			// SC as a product.  We differentiate the two cases by the presence of the marketplace token.
 			// If absent, it's a simple login and we skip the registration step.
 			return true;
 		}
 		
-		String awsMarketPlaceToken = URLDecoder.decode(urlEncodedAwsMarketPlaceToken, UTF8);
 		// exchange for AWS Customer ID
 		String expectedProductCode = getProperty(MARKETPLACE_PRODUCT_CODE_SC_PARAMETER, false);
 		ResolveCustomerResult resolveCustomerResult = marketplaceMeteringHelper.resolveCustomer(awsMarketPlaceToken);
