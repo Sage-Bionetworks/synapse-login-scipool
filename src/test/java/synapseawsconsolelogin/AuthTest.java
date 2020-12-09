@@ -166,10 +166,9 @@ public class AuthTest {
 		System.setProperty("MARKETPLACE_PRODUCT_CODE", marketplaceProductCode);
 		Auth auth = new Auth(mockDynamoDbHelper, mockMarketplaceMeteringHelper);
 		
-		String marketplaceToken = "marketplace/token";
-		String urlEncodedMarketplaceToken = URLEncoder.encode(marketplaceToken, "UTF-8");
+		String marketplaceToken = "marketplace/token+";
 		
-		when(mockServletRequest.getParameter("state")).thenReturn(urlEncodedMarketplaceToken);
+		when(mockServletRequest.getParameter("state")).thenReturn(marketplaceToken);
 		ResolveCustomerResult resolveCustomerResult = new ResolveCustomerResult();
 		String customerIdentifier = "customer-id";
 		resolveCustomerResult.setCustomerIdentifier(customerIdentifier);
@@ -208,10 +207,9 @@ public class AuthTest {
 		System.setProperty("MARKETPLACE_PRODUCT_CODE_SC", marketplaceProductCode);
 		Auth auth = new Auth(mockDynamoDbHelper, mockMarketplaceMeteringHelper);
 		
-		String marketplaceToken = "marketplace/token";
-		String urlEncodedMarketplaceToken = URLEncoder.encode(marketplaceToken, "UTF-8");
+		String marketplaceToken = "marketplace/token+";
 		
-		when(mockServletRequest.getParameter("state")).thenReturn(urlEncodedMarketplaceToken);
+		when(mockServletRequest.getParameter("state")).thenReturn(marketplaceToken);
 		ResolveCustomerResult resolveCustomerResult = new ResolveCustomerResult();
 		String customerIdentifier = "customer-id";
 		resolveCustomerResult.setCustomerIdentifier(customerIdentifier);
@@ -238,10 +236,9 @@ public class AuthTest {
 		System.setProperty("MARKETPLACE_PRODUCT_CODE", marketplaceProductCode);
 		Auth auth = new Auth(mockDynamoDbHelper, mockMarketplaceMeteringHelper);
 		
-		String marketplaceToken = "marketplace/token";
-		String urlEncodedMarketplaceToken = URLEncoder.encode(marketplaceToken, "UTF-8");
+		String marketplaceToken = "marketplace/token+";
 		
-		when(mockServletRequest.getParameter("state")).thenReturn(urlEncodedMarketplaceToken);
+		when(mockServletRequest.getParameter("state")).thenReturn(marketplaceToken);
 		ResolveCustomerResult resolveCustomerResult = new ResolveCustomerResult();
 		String customerIdentifier = "customer-id";
 		resolveCustomerResult.setCustomerIdentifier(customerIdentifier);
@@ -265,10 +262,9 @@ public class AuthTest {
 		System.setProperty("MARKETPLACE_PRODUCT_CODE", marketplaceProductCode);
 		Auth auth = new Auth(mockDynamoDbHelper, mockMarketplaceMeteringHelper);
 		
-		String marketplaceToken = "marketplace/token";
-		String urlEncodedMarketplaceToken = URLEncoder.encode(marketplaceToken, "UTF-8");
+		String marketplaceToken = "marketplace/token+";
 		
-		when(mockServletRequest.getParameter("state")).thenReturn(urlEncodedMarketplaceToken);
+		when(mockServletRequest.getParameter("state")).thenReturn(marketplaceToken);
 		ResolveCustomerResult resolveCustomerResult = new ResolveCustomerResult();
 		String customerIdentifier = "customer-id";
 		resolveCustomerResult.setCustomerIdentifier(customerIdentifier);
