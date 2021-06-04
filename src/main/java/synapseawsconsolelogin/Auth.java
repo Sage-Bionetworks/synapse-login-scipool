@@ -7,7 +7,6 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.PrintStream;
 import java.io.PrintWriter;
-import java.io.UnsupportedEncodingException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLConnection;
@@ -15,7 +14,6 @@ import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -46,7 +44,6 @@ import com.amazonaws.AmazonClientException;
 import com.amazonaws.SdkClientException;
 import com.amazonaws.auth.DefaultAWSCredentialsProviderChain;
 import com.amazonaws.regions.Regions;
-import com.amazonaws.services.marketplacemetering.model.ResolveCustomerResult;
 import com.amazonaws.services.securitytoken.AWSSecurityTokenService;
 import com.amazonaws.services.securitytoken.AWSSecurityTokenServiceClientBuilder;
 import com.amazonaws.services.securitytoken.model.AssumeRoleRequest;
@@ -63,6 +60,7 @@ import io.jsonwebtoken.Header;
 import io.jsonwebtoken.Jwt;
 import io.jsonwebtoken.Jwts;
 
+
 public class Auth extends HttpServlet {
 	private static Logger logger = Logger.getLogger("Auth");
 
@@ -74,32 +72,16 @@ public class Auth extends HttpServlet {
 	private static final String HEALTH_URI = "/health";
 	public static final String ABOUT_URI = "/about";
 	public static final String SECTOR_IDENTIFIER_URI  = "/redirect_uris.json";
-	public static final String SUBSCRIBE_URI  = "/subscribe";
-	
-	private static final String STATE = "state";
-	private static final String LOCATION = "Location";
-	private static final String UTF8 = "UTF-8";
-	private static final String OPENID = "openid";
-
 	private static final String AWS_CONSOLE_URL_TEMPLATE = "https://%1$s.console.aws.amazon.com/servicecatalog/home?region=%1$s#/products";
 	private static final String AWS_SIGN_IN_URL = "https://signin.aws.amazon.com/federation";
 	private static final String SESSION_NAME_CLAIMS_PROPERTY_NAME = "SESSION_NAME_CLAIMS";
-	private static final String USER_ID_CLAIM_NAME="userid";
-	private static final String SESSION_CLAIM_NAMES_DEFAULT=USER_ID_CLAIM_NAME;
+	private static final String SESSION_CLAIM_NAMES_DEFAULT="userid";
 	private static final String SESSION_TAG_CLAIMS_PROPERTY_NAME = "SESSION_TAG_CLAIMS";
 	private static final String REDIRECT_URIS_PROPERTY_NAME = "REDIRECT_URIS";
-	private static final String SESSION_TAG_CLAIMS_DEFAULT = USER_ID_CLAIM_NAME;
+	private static final String SESSION_TAG_CLAIMS_DEFAULT = "userid";
 	private static final String SIGNIN_TOKEN_URL_TEMPLATE = AWS_SIGN_IN_URL + 
             "?Action=getSigninToken&SessionDuration=%1$s&SessionType=json&Session=%2$s";
 	static final String PROPERTIES_FILENAME_PARAMETER = "PROPERTIES_FILENAME";
-	static final String TEAM_TO_ROLE_ARN_MAP_PARAMETER = "TEAM_TO_ROLE_ARN_MAP";
-	static final String SESSION_TIMEOUT_SECONDS_PARAMETER = "SESSION_TIMEOUT_SECONDS";
-	static final String AWS_REGION_PARAMETER = "AWS_REGION";
-	static final String SYNAPSE_OAUTH_CLIENT_ID_PARAMETER = "SYNAPSE_OAUTH_CLIENT_ID";
-	static final String SYNAPSE_OAUTH_CLIENT_SECRET_PARAMETER = "SYNAPSE_OAUTH_CLIENT_SECRET";
-	static final String MARKETPLACE_PRODUCT_CODE_SC_PARAMETER = "MARKETPLACE_PRODUCT_CODE_SC";
-	static final String MARKETPLACE_ID_DYNAMO_TABLE_NAME_PARAMETER = "MARKETPLACE_ID_DYNAMO_TABLE_NAME";
-	
 	private static final int SESSION_TIMEOUT_SECONDS_DEFAULT = 43200;
 	private static final String TAG_PREFIX = "synapse-";
 	private static final String SSM_RESERVED_PREFIX = "ssm::";
@@ -120,7 +102,7 @@ public class Auth extends HttpServlet {
 	private String appVersion = null;
 	
 	Map<String,String> getTeamToRoleMap() throws JSONException {
-		String jsonString = getProperty(TEAM_TO_ROLE_ARN_MAP_PARAMETER);
+		String jsonString = getProperty("TEAM_TO_ROLE_ARN_MAP");
 		JSONArray array;
 		try {
 			array = new JSONArray(jsonString);
@@ -134,38 +116,19 @@ public class Auth extends HttpServlet {
 		}
 		return result;
 	}
-	
-	private DynamoDbHelper dynamoDbHelper = null;
-	private MarketplaceMeteringHelper marketplaceMeteringHelper = null;
 
 	public Auth() {
-		initialize();
-		String tableName = getProperty(MARKETPLACE_ID_DYNAMO_TABLE_NAME_PARAMETER);
-		this.dynamoDbHelper = new DynamoDbHelper(tableName);
-		this.marketplaceMeteringHelper = new MarketplaceMeteringHelper();
-	}
-	
-	/*
-	 * For testing
-	 */
-	public Auth(DynamoDbHelper dynamoDbHelper, MarketplaceMeteringHelper marketplaceMeteringHelper) {
-		initialize();
-		this.dynamoDbHelper = dynamoDbHelper;
-		this.marketplaceMeteringHelper = marketplaceMeteringHelper;
-	}
-		
-	private void initialize() {
 		initProperties();
 		appVersion = initAppVersion();
 		ssmParameterCache = new Properties();
-		String sessionTimeoutSecondsString=getProperty(SESSION_TIMEOUT_SECONDS_PARAMETER, false);
+		String sessionTimeoutSecondsString=getProperty("SESSION_TIMEOUT_SECONDS", false);
 		if (sessionTimeoutSecondsString==null) {
 			sessionTimeoutSeconds = ""+SESSION_TIMEOUT_SECONDS_DEFAULT;
 		} else {
 			sessionTimeoutSeconds = sessionTimeoutSecondsString;
 		}
 		teamToRoleMap = getTeamToRoleMap();
-		awsRegion = getProperty(AWS_REGION_PARAMETER);
+		awsRegion = getProperty("AWS_REGION");
 		awsConsoleUrl = String.format(AWS_CONSOLE_URL_TEMPLATE, awsRegion);
 	}
 	
@@ -187,13 +150,8 @@ public class Auth extends HttpServlet {
 		return getCommaSeparatedPropertyAsList(REDIRECT_URIS_PROPERTY_NAME, defaultRedirectURI);
 	}
 
-	/**
-	 * @return the URL to redirect the client to for OAuth login.
-	 */
-	public String getAuthorizeUrl() throws UnsupportedEncodingException {
-		// userid claim is used by this application so it always must be included in the list of claims requested from Synapse
-		Set<String> allClaims = new TreeSet<String>(Collections.singleton(USER_ID_CLAIM_NAME));
-		allClaims.addAll(getSessionClaimNames());
+	public String getAuthorizeUrl() {
+		Set<String> allClaims = new TreeSet<String>(getSessionClaimNames());
 		allClaims.addAll(getTagClaimNames());
 		StringBuilder sb = new StringBuilder();
 		boolean first=true;
@@ -206,44 +164,15 @@ public class Auth extends HttpServlet {
 		return "https://signin.synapse.org?response_type=code&client_id=%s&redirect_uri=%s&"+
 		"claims={\"id_token\":"+claims+",\"userinfo\":"+claims+"}";
 	}
-
+	
 	@Override
 	public void doPost(HttpServletRequest req, HttpServletResponse resp)
 			throws IOException {
-		String uri = req.getRequestURI();
-		if (uri.equals(SUBSCRIBE_URI)) {
-			handleSubscribe(req, resp);
-		} else {
-			resp.setContentType("text/plain");
-			try (ServletOutputStream os=resp.getOutputStream()) {
-				os.println("Not found.");
-			}
-			resp.setStatus(404);
+		resp.setContentType("text/plain");
+		try (ServletOutputStream os=resp.getOutputStream()) {
+			os.println("Not found.");
 		}
-	}
-	
-	/*
-	 * Initiate the OAuth login flow for the case in which a user is subscribing to Service Catalog
-	 * as a Marketplace product.  Passes the temporary 'marketplace token' as the OAuth state parameter.
-	 */
-	public void handleSubscribe(HttpServletRequest req, HttpServletResponse resp) throws IOException {
-		String awsMarketPlaceToken = req.getParameter("x-amzn-marketplace-token");
-		if (StringUtils.isEmpty(awsMarketPlaceToken)) {
-			String errorMessage = "Cannot continue subscription: Missing x-amzn-marketplace-token parameter.";
-			logger.log(Level.SEVERE, errorMessage);
-			resp.setContentType("text/plain");
-			try (ServletOutputStream os=resp.getOutputStream()) {
-				os.println(errorMessage);
-			}
-			resp.setStatus(400);
-		} else {
-			// log in with Synapse, passing along the marketplace token.
-			String redirectBackUrl = getRedirectBackUrlSynapse(req);
-			String redirectUrl = new OAuth2Api(getAuthorizeUrl(), TOKEN_URL).
-					getAuthorizationUrl(new OAuthConfig(getClientIdSynapse(), null, redirectBackUrl, null, OPENID, null));
-			resp.setHeader(LOCATION, redirectUrl+"&"+STATE+"="+URLEncoder.encode(awsMarketPlaceToken, UTF8));
-			resp.setStatus(303);
-		}
+		resp.setStatus(404);
 	}
 
 	private static String getThisEndpoint(HttpServletRequest req) throws MalformedURLException {
@@ -256,13 +185,13 @@ public class Auth extends HttpServlet {
 	}
 		
 	private String getClientIdSynapse() {
-		String result = getProperty(SYNAPSE_OAUTH_CLIENT_ID_PARAMETER);
+		String result = getProperty("SYNAPSE_OAUTH_CLIENT_ID");
 		logger.log(Level.WARNING, "SYNAPSE_OAUTH_CLIENT_ID="+result);
 		return result;
 	}
 	
 	private String getClientSecretSynapse() {
-		String result =  getProperty(SYNAPSE_OAUTH_CLIENT_SECRET_PARAMETER);
+		String result =  getProperty("SYNAPSE_OAUTH_CLIENT_SECRET");
 		return result;
 	}
 
@@ -272,7 +201,7 @@ public class Auth extends HttpServlet {
 		try {
 			doGetIntern(req, resp);
 		} catch (Exception e) {
-			logger.log(Level.SEVERE, e.getMessage(), e);
+			logger.log(Level.SEVERE, "", e);
 			resp.setContentType("text/plain");
 			try (ServletOutputStream os=resp.getOutputStream()) {
 				os.println("Error:");
@@ -306,28 +235,26 @@ public class Auth extends HttpServlet {
 		// credentials as parameters.
 
 		String getSigninTokenURL = String.format(SIGNIN_TOKEN_URL_TEMPLATE, 
-				sessionTimeoutSeconds, URLEncoder.encode(sessionJson,UTF8));
+				sessionTimeoutSeconds, URLEncoder.encode(sessionJson,"UTF-8"));
 
 		String returnContent = httpGetExecutor.executeHttpGet(getSigninTokenURL);
 
 		String signinToken = new JSONObject(returnContent).getString("SigninToken");
 
-		String signinTokenParameter = "&SigninToken=" + URLEncoder.encode(signinToken,UTF8);
+		String signinTokenParameter = "&SigninToken=" + URLEncoder.encode(signinToken,"UTF-8");
 
 		// The issuer parameter is optional, but recommended. Use it to direct users
 		// to your sign-in page when their session expires.
 
-		String issuerParameter = "&Issuer=" + URLEncoder.encode(issuerURL, UTF8);
+		String issuerParameter = "&Issuer=" + URLEncoder.encode(issuerURL, "UTF-8");
 
 		// Finally, present the completed URL for the AWS console session to the user
 		String loginURL = AWS_SIGN_IN_URL + "?Action=login" +
 				signinTokenParameter + issuerParameter +
-				"&Destination=" + URLEncoder.encode(awsConsoleUrl,UTF8);
+				"&Destination=" + URLEncoder.encode(awsConsoleUrl,"UTF-8");
 		
 		return loginURL;
 	}
-	
-
 	
 	public static Jwt<Header,Claims> parseJWT(String token) {
 		// Note, we don't check the signature
@@ -396,42 +323,6 @@ public class Auth extends HttpServlet {
 			os.println("</body></html>");
 		}
 	}
-	
-	/*
-	 * return true if subscription is successful or none needed; false if Synapse user linked to another AWS customer id
-	 */
-	public boolean registerCustomer(HttpServletRequest req, HttpServletResponse resp, String userId) throws IOException {
-		// get the 'state' request parameter
-		String awsMarketPlaceToken = req.getParameter(STATE);
-		if (StringUtils.isEmpty(awsMarketPlaceToken)) {
-			// We pass through here both for regular login and when registering a customer who purchased
-			// SC as a product.  We differentiate the two cases by the presence of the marketplace token.
-			// If absent, it's a simple login and we skip the registration step.
-			return true;
-		}
-		
-		// exchange for AWS Customer ID
-		String expectedProductCode = getProperty(MARKETPLACE_PRODUCT_CODE_SC_PARAMETER, false);
-		ResolveCustomerResult resolveCustomerResult = marketplaceMeteringHelper.resolveCustomer(awsMarketPlaceToken);
-		if (StringUtils.isNotEmpty(expectedProductCode) && !expectedProductCode.equals(resolveCustomerResult.getProductCode())) {
-			throw new RuntimeException("Expected product code "+expectedProductCode+" but found "+resolveCustomerResult.getProductCode());
-		}
-		// write userId + customer ID to Synapse table
-		// look up userId in Synapse table.  Is it already there with another customerIdentifier?
-
-		String existingCustomerId = dynamoDbHelper.getMarketplaceCustomerIdForUser(userId);
-		if (existingCustomerId==null) {
-			dynamoDbHelper.addMarketplaceId(userId, resolveCustomerResult.getProductCode(), resolveCustomerResult.getCustomerIdentifier());
-		} else {
-			if (existingCustomerId.equals(resolveCustomerResult.getCustomerIdentifier())) {
-				// already registered with the existing customer ID, nothing more to do
-				logger.log(Level.INFO, "Synapse user "+userId+" already registered customer ID "+existingCustomerId);
-			} else {
-				return false;
-			}
-		}
-		return true;
-	}
 		
 	private void doGetIntern(HttpServletRequest req, HttpServletResponse resp)
 				throws Exception {
@@ -442,10 +333,10 @@ public class Auth extends HttpServlet {
 			// this is the initial redirect to go log in with Synapse
 			String redirectBackUrl = getRedirectBackUrlSynapse(req);
 			String redirectUrl = new OAuth2Api(getAuthorizeUrl(), TOKEN_URL).
-					getAuthorizationUrl(new OAuthConfig(getClientIdSynapse(), null, redirectBackUrl, null, OPENID, null));
-			resp.setHeader(LOCATION, redirectUrl);
+					getAuthorizationUrl(new OAuthConfig(getClientIdSynapse(), null, redirectBackUrl, null, "openid", null));
+			resp.setHeader("Location", redirectUrl);
 			resp.setStatus(303);
-		} else if (uri.equals(REDIRECT_URI)) {
+		}	else if (uri.equals(REDIRECT_URI)) {
 			// this is the second step, after logging in to Synapse
 			service = (OAuth2Api.BasicOAuth2Service)(new OAuth2Api(getAuthorizeUrl(), TOKEN_URL)).
 					createService(new OAuthConfig(getClientIdSynapse(), getClientSecretSynapse(), getRedirectBackUrlSynapse(req), null, null, null));
@@ -473,31 +364,7 @@ public class Auth extends HttpServlet {
 					break;
 				}
 			}
-			
-			String userId = claims.get(USER_ID_CLAIM_NAME, String.class);
-			
-			
-			// We pass through here both for regular login and when registering a customer who purchased
-			// SC as a product.
 
-
-			if (!registerCustomer(req, resp, userId) ) {
-				// previously subscribed to the Marketplace product with this Synapse account and a different AWS customer id.
-				resp.setContentType("text/html");
-				resp.setCharacterEncoding(UTF8);
-				resp.setStatus(400);
-				PrintWriter out = resp.getWriter();
-				out.println("<html><head/><body>");
-				out.println("You have already subscribed to this AWS Marketplace product.<br/>");
-				out.println("Please log in and start using ");
-				out.println("<a href="+getThisEndpoint(req)+">Service Catalog</a>");
-				out.println("</body></html>");
-				out.flush();
-				return;
-			}
-
-			// TODO if not in a pre-authorized team but DID provide customer ID, let them through
-			
 			if (roleArn==null) {
 				resp.setContentType("text/html");
 				try (ServletOutputStream os=resp.getOutputStream()) {
@@ -533,14 +400,14 @@ public class Auth extends HttpServlet {
 					return bufferReader.readLine();
 				}});
 			
-			resp.setHeader(LOCATION, redirectURL);
+			resp.setHeader("Location", redirectURL);
 			resp.setStatus(303);
 		} else if (uri.equals(HEALTH_URI)) {
 			resp.setStatus(200);
 		} else if (uri.equals(ABOUT_URI)) {
 			// Currently returns version
 			resp.setContentType("application/json");
-			resp.setCharacterEncoding(UTF8);
+			resp.setCharacterEncoding("UTF-8");
 			resp.setStatus(200);
 			JSONObject o = new JSONObject();
 			o.put("version", appVersion);
@@ -550,7 +417,7 @@ public class Auth extends HttpServlet {
 		} else if (uri.equals(SECTOR_IDENTIFIER_URI)) {
 			// returns a JSONArray containing all the redirect URIs under the sector identifier
 			resp.setContentType("application/json");
-			resp.setCharacterEncoding(UTF8);
+			resp.setCharacterEncoding("UTF-8");
 			resp.setStatus(200);
 			JSONArray o = new JSONArray();
 			for (String s : getRedirectURIs(getRedirectBackUrlSynapse(req))) {
@@ -559,10 +426,8 @@ public class Auth extends HttpServlet {
 			PrintWriter out = resp.getWriter();
 			out.print(o.toString());
 			out.flush();
-		} else if (uri.equals(SUBSCRIBE_URI)) {
-			handleSubscribe(req, resp);
 		} else {
-			resp.setHeader(LOCATION, getThisEndpoint(req));
+			resp.setHeader("Location", getThisEndpoint(req));
 			resp.setStatus(303);
 		}
 	}
