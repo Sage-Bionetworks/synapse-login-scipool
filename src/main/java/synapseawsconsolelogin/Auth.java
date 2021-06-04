@@ -72,16 +72,26 @@ public class Auth extends HttpServlet {
 	private static final String HEALTH_URI = "/health";
 	public static final String ABOUT_URI = "/about";
 	public static final String SECTOR_IDENTIFIER_URI  = "/redirect_uris.json";
+
+	private static final String LOCATION = "Location";
+	private static final String UTF8 = "UTF-8";
+
 	private static final String AWS_CONSOLE_URL_TEMPLATE = "https://%1$s.console.aws.amazon.com/servicecatalog/home?region=%1$s#/products";
 	private static final String AWS_SIGN_IN_URL = "https://signin.aws.amazon.com/federation";
 	private static final String SESSION_NAME_CLAIMS_PROPERTY_NAME = "SESSION_NAME_CLAIMS";
-	private static final String SESSION_CLAIM_NAMES_DEFAULT="userid";
+	private static final String USER_ID_CLAIM_NAME="userid";
+	private static final String SESSION_CLAIM_NAMES_DEFAULT=USER_ID_CLAIM_NAME;
 	private static final String SESSION_TAG_CLAIMS_PROPERTY_NAME = "SESSION_TAG_CLAIMS";
 	private static final String REDIRECT_URIS_PROPERTY_NAME = "REDIRECT_URIS";
-	private static final String SESSION_TAG_CLAIMS_DEFAULT = "userid";
+	private static final String SESSION_TAG_CLAIMS_DEFAULT = USER_ID_CLAIM_NAME;
 	private static final String SIGNIN_TOKEN_URL_TEMPLATE = AWS_SIGN_IN_URL + 
             "?Action=getSigninToken&SessionDuration=%1$s&SessionType=json&Session=%2$s";
 	static final String PROPERTIES_FILENAME_PARAMETER = "PROPERTIES_FILENAME";
+	static final String TEAM_TO_ROLE_ARN_MAP_PARAMETER = "TEAM_TO_ROLE_ARN_MAP";
+	static final String SESSION_TIMEOUT_SECONDS_PARAMETER = "SESSION_TIMEOUT_SECONDS";
+	static final String AWS_REGION_PARAMETER = "AWS_REGION";
+	static final String SYNAPSE_OAUTH_CLIENT_ID_PARAMETER = "SYNAPSE_OAUTH_CLIENT_ID";
+	static final String SYNAPSE_OAUTH_CLIENT_SECRET_PARAMETER = "SYNAPSE_OAUTH_CLIENT_SECRET";
 	private static final int SESSION_TIMEOUT_SECONDS_DEFAULT = 43200;
 	private static final String TAG_PREFIX = "synapse-";
 	private static final String SSM_RESERVED_PREFIX = "ssm::";
@@ -102,7 +112,7 @@ public class Auth extends HttpServlet {
 	private String appVersion = null;
 	
 	Map<String,String> getTeamToRoleMap() throws JSONException {
-		String jsonString = getProperty("TEAM_TO_ROLE_ARN_MAP");
+		String jsonString = getProperty(TEAM_TO_ROLE_ARN_MAP_PARAMETER);
 		JSONArray array;
 		try {
 			array = new JSONArray(jsonString);
@@ -121,14 +131,14 @@ public class Auth extends HttpServlet {
 		initProperties();
 		appVersion = initAppVersion();
 		ssmParameterCache = new Properties();
-		String sessionTimeoutSecondsString=getProperty("SESSION_TIMEOUT_SECONDS", false);
+		String sessionTimeoutSecondsString=getProperty(SESSION_TIMEOUT_SECONDS_PARAMETER, false);
 		if (sessionTimeoutSecondsString==null) {
 			sessionTimeoutSeconds = ""+SESSION_TIMEOUT_SECONDS_DEFAULT;
 		} else {
 			sessionTimeoutSeconds = sessionTimeoutSecondsString;
 		}
 		teamToRoleMap = getTeamToRoleMap();
-		awsRegion = getProperty("AWS_REGION");
+		awsRegion = getProperty(AWS_REGION_PARAMETER);
 		awsConsoleUrl = String.format(AWS_CONSOLE_URL_TEMPLATE, awsRegion);
 	}
 	
@@ -185,13 +195,13 @@ public class Auth extends HttpServlet {
 	}
 		
 	private String getClientIdSynapse() {
-		String result = getProperty("SYNAPSE_OAUTH_CLIENT_ID");
-		logger.log(Level.WARNING, "SYNAPSE_OAUTH_CLIENT_ID="+result);
+		String result = getProperty(SYNAPSE_OAUTH_CLIENT_ID_PARAMETER);
+		logger.log(Level.WARNING, SYNAPSE_OAUTH_CLIENT_ID_PARAMETER+"="+result);
 		return result;
 	}
 	
 	private String getClientSecretSynapse() {
-		String result =  getProperty("SYNAPSE_OAUTH_CLIENT_SECRET");
+		String result =  getProperty(SYNAPSE_OAUTH_CLIENT_SECRET_PARAMETER);
 		return result;
 	}
 
@@ -201,7 +211,7 @@ public class Auth extends HttpServlet {
 		try {
 			doGetIntern(req, resp);
 		} catch (Exception e) {
-			logger.log(Level.SEVERE, "", e);
+			logger.log(Level.SEVERE, e.getMessage(), e);
 			resp.setContentType("text/plain");
 			try (ServletOutputStream os=resp.getOutputStream()) {
 				os.println("Error:");
@@ -235,23 +245,23 @@ public class Auth extends HttpServlet {
 		// credentials as parameters.
 
 		String getSigninTokenURL = String.format(SIGNIN_TOKEN_URL_TEMPLATE, 
-				sessionTimeoutSeconds, URLEncoder.encode(sessionJson,"UTF-8"));
+				sessionTimeoutSeconds, URLEncoder.encode(sessionJson,UTF8));
 
 		String returnContent = httpGetExecutor.executeHttpGet(getSigninTokenURL);
 
 		String signinToken = new JSONObject(returnContent).getString("SigninToken");
 
-		String signinTokenParameter = "&SigninToken=" + URLEncoder.encode(signinToken,"UTF-8");
+		String signinTokenParameter = "&SigninToken=" + URLEncoder.encode(signinToken,UTF8);
 
 		// The issuer parameter is optional, but recommended. Use it to direct users
 		// to your sign-in page when their session expires.
 
-		String issuerParameter = "&Issuer=" + URLEncoder.encode(issuerURL, "UTF-8");
+		String issuerParameter = "&Issuer=" + URLEncoder.encode(issuerURL, UTF8);
 
 		// Finally, present the completed URL for the AWS console session to the user
 		String loginURL = AWS_SIGN_IN_URL + "?Action=login" +
 				signinTokenParameter + issuerParameter +
-				"&Destination=" + URLEncoder.encode(awsConsoleUrl,"UTF-8");
+				"&Destination=" + URLEncoder.encode(awsConsoleUrl,UTF8);
 		
 		return loginURL;
 	}
@@ -334,7 +344,7 @@ public class Auth extends HttpServlet {
 			String redirectBackUrl = getRedirectBackUrlSynapse(req);
 			String redirectUrl = new OAuth2Api(getAuthorizeUrl(), TOKEN_URL).
 					getAuthorizationUrl(new OAuthConfig(getClientIdSynapse(), null, redirectBackUrl, null, "openid", null));
-			resp.setHeader("Location", redirectUrl);
+			resp.setHeader(LOCATION, redirectUrl);
 			resp.setStatus(303);
 		}	else if (uri.equals(REDIRECT_URI)) {
 			// this is the second step, after logging in to Synapse
@@ -400,14 +410,14 @@ public class Auth extends HttpServlet {
 					return bufferReader.readLine();
 				}});
 			
-			resp.setHeader("Location", redirectURL);
+			resp.setHeader(LOCATION, redirectURL);
 			resp.setStatus(303);
 		} else if (uri.equals(HEALTH_URI)) {
 			resp.setStatus(200);
 		} else if (uri.equals(ABOUT_URI)) {
 			// Currently returns version
 			resp.setContentType("application/json");
-			resp.setCharacterEncoding("UTF-8");
+			resp.setCharacterEncoding(UTF8);
 			resp.setStatus(200);
 			JSONObject o = new JSONObject();
 			o.put("version", appVersion);
@@ -417,7 +427,7 @@ public class Auth extends HttpServlet {
 		} else if (uri.equals(SECTOR_IDENTIFIER_URI)) {
 			// returns a JSONArray containing all the redirect URIs under the sector identifier
 			resp.setContentType("application/json");
-			resp.setCharacterEncoding("UTF-8");
+			resp.setCharacterEncoding(UTF8);
 			resp.setStatus(200);
 			JSONArray o = new JSONArray();
 			for (String s : getRedirectURIs(getRedirectBackUrlSynapse(req))) {
@@ -427,7 +437,7 @@ public class Auth extends HttpServlet {
 			out.print(o.toString());
 			out.flush();
 		} else {
-			resp.setHeader("Location", getThisEndpoint(req));
+			resp.setHeader(LOCATION, getThisEndpoint(req));
 			resp.setStatus(303);
 		}
 	}

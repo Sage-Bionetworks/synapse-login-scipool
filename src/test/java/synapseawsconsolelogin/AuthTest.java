@@ -6,6 +6,7 @@ import static org.junit.Assert.assertTrue;
 import static org.mockito.Matchers.anyString;
 import static org.mockito.Mockito.when;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -33,7 +34,6 @@ import com.amazonaws.services.simplesystemsmanagement.AWSSimpleSystemsManagement
 import com.amazonaws.services.simplesystemsmanagement.AWSSimpleSystemsManagementClientBuilder;
 import com.amazonaws.services.simplesystemsmanagement.model.ParameterType;
 import com.amazonaws.services.simplesystemsmanagement.model.PutParameterRequest;
-import com.google.appengine.repackaged.com.google.common.collect.ImmutableList;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.impl.DefaultClaims;
@@ -214,7 +214,10 @@ public class AuthTest {
 		
 		Claims claims = new DefaultClaims();
 		Auth auth = new Auth();
-		claims.put("team", ImmutableList.of("888", "999"));
+		List<String> teams = new ArrayList<String>();
+		teams.add("888");
+		teams.add("999");
+		claims.put("team", teams);
 		claims.put("userid", userid);
 		claims.put("user_name", "aname");
 
@@ -251,7 +254,9 @@ public class AuthTest {
 	public void testRedirectURIs() {
 		System.setProperty("REDIRECT_URIS", "foo,bar");
 		
-		List<String> expected = ImmutableList.of("foo", "bar");
+		List<String> expected = new ArrayList<String>();
+		expected.add("foo");
+		expected.add("bar");
 		
 		Auth auth = new Auth();
 		
