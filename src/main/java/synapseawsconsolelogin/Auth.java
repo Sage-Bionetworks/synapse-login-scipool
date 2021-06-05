@@ -105,7 +105,9 @@ public class Auth extends HttpServlet {
 	public static final String GIT_COMMIT_TIME_KEY = "git.commit.time";
 	
 	private static final String NONCE_TAG_NAME = "nonce";
-
+	
+	private static final String STS_TOKEN_FILE_NAME = "config";
+	private static final String OIDC_TOKEN_FILE_NAME = "synapse_oidc_token";
 
 	private Map<String,String> teamToRoleMap;
 	private String sessionTimeoutSeconds;
@@ -390,7 +392,7 @@ public class Auth extends HttpServlet {
 		resp.setStatus(303);		
 	}
 	
-	private void returnStsToken(Claims claims, String roleArn, String selectedTeam, HttpServletResponse resp) {
+	private void returnStsToken(Claims claims, String roleArn, String selectedTeam, HttpServletResponse resp) throws IOException {
 		AssumeRoleRequest assumeRoleRequest = createAssumeRoleRequest(claims, roleArn, selectedTeam);
 		
 		AssumeRoleResult assumeRoleResult = stsClient.assumeRole(assumeRoleRequest);
@@ -400,7 +402,7 @@ public class Auth extends HttpServlet {
 		sb.append(credentials.getSecretAccessKey()); sb.append("\n");
 		sb.append(credentials.getSessionToken()); sb.append("\n");
 		
-		writeFileToResponse(sb.toString(), filename, resp);
+		writeFileToResponse(sb.toString(), STS_TOKEN_FILE_NAME, resp);
 	}
 	
 	public static void writeFileToResponse(String content, String filename, HttpServletResponse resp) throws IOException {
@@ -418,8 +420,8 @@ public class Auth extends HttpServlet {
 		}
 	}
 		
-	private void returnToken(String token, HttpServletResponse resp) {
-		writeFileToResponse(token, filename, resp);
+	private void returnToken(String token, HttpServletResponse resp) throws IOException {
+		writeFileToResponse(token, OIDC_TOKEN_FILE_NAME, resp);
 	}
 		
 	private void doGetIntern(HttpServletRequest req, HttpServletResponse resp)

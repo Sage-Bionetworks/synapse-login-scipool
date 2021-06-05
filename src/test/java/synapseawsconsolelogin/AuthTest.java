@@ -84,7 +84,7 @@ public class AuthTest {
 		Auth auth = new Auth();
 		
 		String expected = "https://signin.synapse.org?response_type=code&client_id=%s&redirect_uri=%s&claims={\"id_token\":{\"team\":{\"values\":[\"123456\",\"345678\"]},\"user_name\":{\"essential\":true},\"userid\":{\"essential\":true}},\"userinfo\":{\"team\":{\"values\":[\"123456\",\"345678\"]},\"user_name\":{\"essential\":true},\"userid\":{\"essential\":true}}}";
-		String actual = auth.getAuthorizeUrl();
+		String actual = auth.getAuthorizeUrl(null);
 		assertEquals(expected, actual);
 	}
 	
