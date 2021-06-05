@@ -19,6 +19,7 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Properties;
 import java.util.Set;
 import java.util.TreeSet;
@@ -37,7 +38,6 @@ import org.json.JSONException;
 import org.json.JSONObject;
 import org.scribe.exceptions.OAuthException;
 import org.scribe.model.OAuthConfig;
-import org.scribe.model.Token;
 import org.scribe.model.Verifier;
 
 import com.amazonaws.AmazonClientException;
@@ -397,12 +397,23 @@ public class Auth extends HttpServlet {
 		
 		AssumeRoleResult assumeRoleResult = stsClient.assumeRole(assumeRoleRequest);
 		Credentials credentials = assumeRoleResult.getCredentials();
-		StringBuilder sb = new StringBuilder();
-		sb.append(credentials.getAccessKeyId()); sb.append("\n");
-		sb.append(credentials.getSecretAccessKey()); sb.append("\n");
-		sb.append(credentials.getSessionToken()); sb.append("\n");
+		Map<String,String> sts = new HashMap<String,String>();
+		sts.put("AccessKeyId", credentials.getAccessKeyId());
+		sts.put("SecretAccessKey", credentials.getSecretAccessKey());
+		sts.put("SessionToken", credentials.getSessionToken());
 		
-		writeFileToResponse(sb.toString(), STS_TOKEN_FILE_NAME, resp);
+		writeFileToResponse(createAWSCliProfile(sts), STS_TOKEN_FILE_NAME, resp);
+	}
+	
+	public static String createAWSCliProfile(Map<String,String> content) {
+		StringBuilder sb = new StringBuilder("[default]");
+		for (Entry<String,String> entry: content.entrySet()) {
+			sb.append("\n");
+			sb.append(entry.getKey());
+			sb.append(" = ");
+			sb.append(entry.getValue());
+		}
+		return sb.toString();
 	}
 	
 	public static void writeFileToResponse(String content, String filename, HttpServletResponse resp) throws IOException {
