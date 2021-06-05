@@ -69,10 +69,14 @@ public class Auth extends HttpServlet {
 	private static final String CLAIM_TEMPLATE="\"%1$s\":{\"essential\":true}";
 	private static final String TOKEN_URL = "https://repo-prod.prod.sagebase.org/auth/v1/oauth2/token";
 	private static final String REDIRECT_URI = "/synapse";
+	private static final String STS_TOKEN_URI = "/ststoken";
+	private static final String ACCESS_TOKEN_URI = "/accesstoken";
+	private static final String ID_TOKEN_URI = "/idtoken";
 	private static final String HEALTH_URI = "/health";
 	public static final String ABOUT_URI = "/about";
 	public static final String SECTOR_IDENTIFIER_URI  = "/redirect_uris.json";
 
+	private static final String STATE = "state";
 	private static final String LOCATION = "Location";
 	private static final String UTF8 = "UTF-8";
 
@@ -110,6 +114,7 @@ public class Auth extends HttpServlet {
 	private Properties ssmParameterCache = null;
 	private String awsConsoleUrl;
 	private String appVersion = null;
+	private AWSSecurityTokenService stsClient = null;
 	
 	Map<String,String> getTeamToRoleMap() throws JSONException {
 		String jsonString = getProperty(TEAM_TO_ROLE_ARN_MAP_PARAMETER);
@@ -140,6 +145,8 @@ public class Auth extends HttpServlet {
 		teamToRoleMap = getTeamToRoleMap();
 		awsRegion = getProperty(AWS_REGION_PARAMETER);
 		awsConsoleUrl = String.format(AWS_CONSOLE_URL_TEMPLATE, awsRegion);
+		stsClient = AWSSecurityTokenServiceClientBuilder.standard()
+				.withRegion(Regions.fromName(awsRegion)).build();
 	}
 	
 	public List<String> getCommaSeparatedPropertyAsList(String propertyName, String defaultValue) {
@@ -160,7 +167,7 @@ public class Auth extends HttpServlet {
 		return getCommaSeparatedPropertyAsList(REDIRECT_URIS_PROPERTY_NAME, defaultRedirectURI);
 	}
 
-	public String getAuthorizeUrl() {
+	public String getAuthorizeUrl(String state) {
 		Set<String> allClaims = new TreeSet<String>(getSessionClaimNames());
 		allClaims.addAll(getTagClaimNames());
 		StringBuilder sb = new StringBuilder();
@@ -171,8 +178,12 @@ public class Auth extends HttpServlet {
 			sb.append(String.format(CLAIM_TEMPLATE, claimName));
 		}
 		String claims = String.format(CLAIMS_TEMPLATE, StringUtils.join(teamToRoleMap.keySet(), "\",\""), sb.toString());
-		return "https://signin.synapse.org?response_type=code&client_id=%s&redirect_uri=%s&"+
+		String result = "https://signin.synapse.org?response_type=code&client_id=%s&redirect_uri=%s&"+
 		"claims={\"id_token\":"+claims+",\"userinfo\":"+claims+"}";
+		if (StringUtils.isNotEmpty(state)) {
+			result += "&"+STATE+"="+state;
+		}
+		return result;
 	}
 	
 	@Override
@@ -333,35 +344,114 @@ public class Auth extends HttpServlet {
 			os.println("</body></html>");
 		}
 	}
+	
+	static boolean isRedirectUri(String uri) {
+		return "/".equals(uri) || 
+				StringUtils.isEmpty(uri) ||
+				STS_TOKEN_URI.equals(uri) ||
+				ID_TOKEN_URI.equals(uri) ||
+				ACCESS_TOKEN_URI.equals(uri);
+	}
+	
+	static RequestType getRequestTypeFromUri(String uri) {
+		if (uri.equals("/") || StringUtils.isEmpty(uri)) {
+			return RequestType.SC_CONSOLE;
+		}
+		if (STS_TOKEN_URI.equals(uri)) {
+			return RequestType.STS_TOKEN;
+		}
+		if (ID_TOKEN_URI.equals(uri)) {
+			return RequestType.ID_TOKEN;
+		}
+		if (ACCESS_TOKEN_URI.equals(uri)) {
+			return RequestType.ACCESS_TOKEN;
+		}
+		throw new IllegalArgumentException("Unrecognized uri: "+uri);
+	}
+	
+	private void redirectToSCConsole(Claims claims, String roleArn, String selectedTeam, HttpServletRequest req, HttpServletResponse resp) throws IOException {
+		AssumeRoleRequest assumeRoleRequest = createAssumeRoleRequest(claims, roleArn, selectedTeam);
+		
+		AssumeRoleResult assumeRoleResult = stsClient.assumeRole(assumeRoleRequest);
+		Credentials credentials = assumeRoleResult.getCredentials();
+		// redirect to AWS login
+		String redirectURL = getConsoleLoginURL(req, credentials, new HttpGetExecutor() {
+
+			@Override
+			public String executeHttpGet(String urlString) throws IOException {
+				URL url = new URL(urlString);
+				URLConnection conn = url.openConnection();
+				BufferedReader bufferReader = new BufferedReader(
+						new InputStreamReader(conn.getInputStream()));  
+				return bufferReader.readLine();
+			}});
+		
+		resp.setHeader(LOCATION, redirectURL);
+		resp.setStatus(303);		
+	}
+	
+	private void returnStsToken(Claims claims, String roleArn, String selectedTeam, HttpServletResponse resp) {
+		AssumeRoleRequest assumeRoleRequest = createAssumeRoleRequest(claims, roleArn, selectedTeam);
+		
+		AssumeRoleResult assumeRoleResult = stsClient.assumeRole(assumeRoleRequest);
+		Credentials credentials = assumeRoleResult.getCredentials();
+		StringBuilder sb = new StringBuilder();
+		sb.append(credentials.getAccessKeyId()); sb.append("\n");
+		sb.append(credentials.getSecretAccessKey()); sb.append("\n");
+		sb.append(credentials.getSessionToken()); sb.append("\n");
+		
+		writeFileToResponse(sb.toString(), filename, resp);
+	}
+	
+	public static void writeFileToResponse(String content, String filename, HttpServletResponse resp) throws IOException {
+		resp.setStatus(200);		
+		resp.setContentType("application/force-download");
+		resp.setCharacterEncoding(UTF8);
+		resp.setHeader("Content-Transfer-Encoding", "binary");
+		resp.setHeader("Cache-Control", "no-store, no-cache");
+		resp.setHeader("Content-Disposition","attachment; filename=\""+filename+"\"");
+		byte[] bytes = content.getBytes(UTF8);
+		resp.setContentLength(bytes.length);
+		try(PrintWriter writer = resp.getWriter()) {
+			writer.print(bytes);
+			writer.flush();	
+		}
+	}
+		
+	private void returnToken(String token, HttpServletResponse resp) {
+		writeFileToResponse(token, filename, resp);
+	}
 		
 	private void doGetIntern(HttpServletRequest req, HttpServletResponse resp)
 				throws Exception {
 		
 		OAuth2Api.BasicOAuth2Service service = null;
 		String uri = req.getRequestURI();
-		if (uri.equals("/") || StringUtils.isEmpty(uri)) {
+		if (isRedirectUri(uri)) {
 			// this is the initial redirect to go log in with Synapse
 			String redirectBackUrl = getRedirectBackUrlSynapse(req);
-			String redirectUrl = new OAuth2Api(getAuthorizeUrl(), TOKEN_URL).
+			String state = getRequestTypeFromUri(uri).name();
+			String redirectUrl = new OAuth2Api(getAuthorizeUrl(state), TOKEN_URL).
 					getAuthorizationUrl(new OAuthConfig(getClientIdSynapse(), null, redirectBackUrl, null, "openid", null));
 			resp.setHeader(LOCATION, redirectUrl);
 			resp.setStatus(303);
 		}	else if (uri.equals(REDIRECT_URI)) {
 			// this is the second step, after logging in to Synapse
-			service = (OAuth2Api.BasicOAuth2Service)(new OAuth2Api(getAuthorizeUrl(), TOKEN_URL)).
+			String state = req.getParameter(STATE);
+			service = (OAuth2Api.BasicOAuth2Service)(new OAuth2Api(getAuthorizeUrl(state), TOKEN_URL)).
 					createService(new OAuthConfig(getClientIdSynapse(), getClientSecretSynapse(), getRedirectBackUrlSynapse(req), null, null, null));
 			String authorizationCode = req.getParameter("code");
-			Token idToken = null;
+			IdAndAccessToken tokens = null;
 			
 			try {
-				idToken = service.getIdToken(null, new Verifier(authorizationCode));
+				tokens = service.getIdAndAccessTokens(null, new Verifier(authorizationCode));
 			} catch (OAuthException e) {
 				handleException(e, resp);
 				return;
 			}
 			
 			// parse ID Token
-			Jwt<Header,Claims> jwt = parseJWT(idToken.getToken());
+			Jwt<Header,Claims> jwt = parseJWT(tokens.getIdToken().getToken());
 			Claims claims = jwt.getBody();
 			List<String> teamIds = claims.get(TEAM_CLAIM_NAME, List.class);
 			
@@ -390,28 +480,25 @@ public class Auth extends HttpServlet {
 				resp.setStatus(200);
 				return;
 			}
+			
+			// we take different actions for different services
+			switch(RequestType.valueOf(state)) {
+			case SC_CONSOLE:
+				redirectToSCConsole(claims, roleArn, selectedTeam, req, resp);
+				break;
+			case STS_TOKEN:
+				returnStsToken(claims, roleArn, selectedTeam, resp);
+				break;
+			case ID_TOKEN:
+				returnToken(tokens.getIdToken().getToken(), resp);
+				break;
+			case ACCESS_TOKEN:
+				returnToken(tokens.getAccessToken().getToken(), resp);
+				break;
+			default:
+				throw new IllegalStateException("Unrecognized request type: "+state);
+			}
 
-			AWSSecurityTokenService stsClient = AWSSecurityTokenServiceClientBuilder.standard()
-					.withRegion(Regions.fromName(awsRegion)).build();
-			
-			AssumeRoleRequest assumeRoleRequest = createAssumeRoleRequest(claims, roleArn, selectedTeam);
-			
-			AssumeRoleResult assumeRoleResult = stsClient.assumeRole(assumeRoleRequest);
-			Credentials credentials = assumeRoleResult.getCredentials();
-			// redirect to AWS login
-			String redirectURL = getConsoleLoginURL(req, credentials, new HttpGetExecutor() {
-
-				@Override
-				public String executeHttpGet(String urlString) throws IOException {
-					URL url = new URL(urlString);
-					URLConnection conn = url.openConnection();
-					BufferedReader bufferReader = new BufferedReader(
-							new InputStreamReader(conn.getInputStream()));  
-					return bufferReader.readLine();
-				}});
-			
-			resp.setHeader(LOCATION, redirectURL);
-			resp.setStatus(303);
 		} else if (uri.equals(HEALTH_URI)) {
 			resp.setStatus(200);
 		} else if (uri.equals(ABOUT_URI)) {
