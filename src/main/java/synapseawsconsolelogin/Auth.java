@@ -503,6 +503,7 @@ public class Auth extends HttpServlet {
 				returnStsToken(claims, roleArn, selectedTeam, resp);
 				break;
 			case ID_TOKEN:
+				// creates file for use here: https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-role.html#cli-configure-role-oidc
 				returnToken(tokens.getIdToken().getToken(), resp);
 				break;
 			case ACCESS_TOKEN:
