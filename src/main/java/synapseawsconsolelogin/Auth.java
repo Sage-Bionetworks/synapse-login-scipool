@@ -141,7 +141,6 @@ public class Auth extends HttpServlet {
 
 	private Map<String,String> teamToRoleMap;
 	private String sessionTimeoutSeconds;
-	private String awsRegion;
 	private Properties properties = null;
 	private Properties ssmParameterCache = null;
 	private String awsConsoleUrl;
@@ -164,7 +163,8 @@ public class Auth extends HttpServlet {
 		return result;
 	}
 
-	public Auth() {
+	private void init(AWSSecurityTokenService stsClient) {
+		this.stsClient = stsClient;
 		initProperties();
 		appVersion = initAppVersion();
 		ssmParameterCache = new Properties();
@@ -175,11 +175,32 @@ public class Auth extends HttpServlet {
 			sessionTimeoutSeconds = sessionTimeoutSecondsString;
 		}
 		teamToRoleMap = getTeamToRoleMap();
-		awsRegion = getProperty(AWS_REGION_PARAMETER);
+		String awsRegion = getProperty(AWS_REGION_PARAMETER);
 		awsConsoleUrl = String.format(AWS_CONSOLE_URL_TEMPLATE, awsRegion);
-		stsClient = AWSSecurityTokenServiceClientBuilder.standard()
-				.withRegion(Regions.fromName(awsRegion)).build();
 	}
+	
+	private static final HttpGetExecutor HTTP_EXECUTOR = new HttpGetExecutor() {
+		@Override
+		public String executeHttpGet(String urlString) throws IOException {
+			URL url = new URL(urlString);
+			URLConnection conn = url.openConnection();
+			BufferedReader bufferReader = new BufferedReader(
+					new InputStreamReader(conn.getInputStream()));  
+			return bufferReader.readLine();
+		}
+	};
+
+	public Auth(AWSSecurityTokenService stsClient) {
+		init(stsClient);
+	}
+		
+	public Auth() {
+		String awsRegion = getProperty(AWS_REGION_PARAMETER);
+		AWSSecurityTokenService stsClient = AWSSecurityTokenServiceClientBuilder.standard()
+				.withRegion(Regions.fromName(awsRegion)).build();
+		init(stsClient);
+	}
+
 	
 	public List<String> getCommaSeparatedPropertyAsList(String propertyName, String defaultValue) {
 		String propertyValue = getProperty(propertyName, false);
@@ -311,7 +332,7 @@ public class Auth extends HttpServlet {
 		// Finally, present the completed URL for the AWS console session to the user
 		String loginURL = AWS_SIGN_IN_URL + "?Action=login" +
 				signinTokenParameter + issuerParameter +
-				"&Destination=" + URLEncoder.encode(awsConsoleUrl,UTF8);
+				"&Destination=" + URLEncoder.encode(awsConsoleUrl, UTF8);
 		
 		return loginURL;
 	}
@@ -405,7 +426,7 @@ public class Auth extends HttpServlet {
 	 * @return the mapped ENUM
 	 */
 	static RequestType getRequestTypeFromUri(String uri) {
-		if (uri.equals("/") || StringUtils.isEmpty(uri)) {
+		if (StringUtils.isEmpty(uri) || "/".equals(uri)) {
 			return RequestType.SC_CONSOLE;
 		}
 		if (STS_TOKEN_URI.equals(uri)) {
@@ -429,22 +450,13 @@ public class Auth extends HttpServlet {
 	 * @param resp
 	 * @throws IOException
 	 */
-	private void redirectToSCConsole(Claims claims, String roleArn, String selectedTeam, HttpServletRequest req, HttpServletResponse resp) throws IOException {
+	void redirectToSCConsole(Claims claims, String roleArn, String selectedTeam, HttpGetExecutor httpExecutor, HttpServletRequest req, HttpServletResponse resp) throws IOException {
 		AssumeRoleRequest assumeRoleRequest = createAssumeRoleRequest(claims, roleArn, selectedTeam);
 		
 		AssumeRoleResult assumeRoleResult = stsClient.assumeRole(assumeRoleRequest);
 		Credentials credentials = assumeRoleResult.getCredentials();
 		// redirect to AWS login
-		String redirectURL = getConsoleLoginURL(req, credentials, new HttpGetExecutor() {
-
-			@Override
-			public String executeHttpGet(String urlString) throws IOException {
-				URL url = new URL(urlString);
-				URLConnection conn = url.openConnection();
-				BufferedReader bufferReader = new BufferedReader(
-						new InputStreamReader(conn.getInputStream()));  
-				return bufferReader.readLine();
-			}});
+		String redirectURL = getConsoleLoginURL(req, credentials, httpExecutor);
 		
 		resp.setHeader(LOCATION, redirectURL);
 		resp.setStatus(303);		
@@ -461,12 +473,12 @@ public class Auth extends HttpServlet {
 	 * @param resp
 	 * @throws IOException
 	 */
-	private void returnStsToken(Claims claims, String roleArn, String selectedTeam, HttpServletResponse resp) throws IOException {
+	void returnStsToken(Claims claims, String roleArn, String selectedTeam, HttpServletResponse resp) throws IOException {
 		AssumeRoleRequest assumeRoleRequest = createAssumeRoleRequest(claims, roleArn, selectedTeam);
 		
 		AssumeRoleResult assumeRoleResult = stsClient.assumeRole(assumeRoleRequest);
 		Credentials credentials = assumeRoleResult.getCredentials();
-		Map<String,String> sts = new HashMap<String,String>();
+		Map<String,String> sts = new LinkedHashMap<String,String>();
 		sts.put("AccessKeyId", credentials.getAccessKeyId());
 		sts.put("SecretAccessKey", credentials.getSecretAccessKey());
 		sts.put("SessionToken", credentials.getSessionToken());
@@ -519,7 +531,7 @@ public class Auth extends HttpServlet {
 	 * @param resp
 	 * @throws IOException
 	 */
-	private void returnToken(String token, HttpServletResponse resp) throws IOException {
+	void returnOidcToken(String token, HttpServletResponse resp) throws IOException {
 		writeFileToResponse(token, OIDC_TOKEN_FILE_NAME, resp);
 	}
 		
@@ -585,17 +597,17 @@ public class Auth extends HttpServlet {
 			// we take different actions for different services
 			switch(RequestType.valueOf(state)) {
 			case SC_CONSOLE:
-				redirectToSCConsole(claims, roleArn, selectedTeam, req, resp);
+				redirectToSCConsole(claims, roleArn, selectedTeam, HTTP_EXECUTOR, req, resp);
 				break;
 			case STS_TOKEN:
 				returnStsToken(claims, roleArn, selectedTeam, resp);
 				break;
 			case ID_TOKEN:
 				// creates file for use here: https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-role.html#cli-configure-role-oidc
-				returnToken(tokens.getIdToken().getToken(), resp);
+				returnOidcToken(tokens.getIdToken().getToken(), resp);
 				break;
 			case ACCESS_TOKEN:
-				returnToken(tokens.getAccessToken().getToken(), resp);
+				returnOidcToken(tokens.getAccessToken().getToken(), resp);
 				break;
 			default:
 				throw new IllegalStateException("Unrecognized request type: "+state);

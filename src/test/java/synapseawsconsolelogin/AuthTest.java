@@ -1,18 +1,26 @@
 package synapseawsconsolelogin;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
+import static org.mockito.Matchers.any;
 import static org.mockito.Matchers.anyString;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.io.PrintWriter;
+import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
 import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
 
 import org.apache.commons.lang.StringUtils;
 import org.junit.After;
@@ -20,6 +28,8 @@ import org.junit.Assume;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Captor;
 import org.mockito.Mock;
 import org.mockito.runners.MockitoJUnitRunner;
 
@@ -27,7 +37,9 @@ import com.amazonaws.AmazonClientException;
 import com.amazonaws.SdkClientException;
 import com.amazonaws.auth.AWSCredentials;
 import com.amazonaws.auth.DefaultAWSCredentialsProviderChain;
+import com.amazonaws.services.securitytoken.AWSSecurityTokenService;
 import com.amazonaws.services.securitytoken.model.AssumeRoleRequest;
+import com.amazonaws.services.securitytoken.model.AssumeRoleResult;
 import com.amazonaws.services.securitytoken.model.Credentials;
 import com.amazonaws.services.securitytoken.model.Tag;
 import com.amazonaws.services.simplesystemsmanagement.AWSSimpleSystemsManagement;
@@ -43,12 +55,24 @@ import io.jsonwebtoken.impl.DefaultClaims;
 public class AuthTest {
 	
 	private static final String TEST_PROPERTY_NAME = "testPropertyName";
+	
+	@Mock
+	private AWSSecurityTokenService mockStsClient;
 
 	@Mock
-	private HttpServletRequest req;
+	private HttpServletRequest mockHttpRequest;
 	
 	@Mock
 	private HttpGetExecutor mockHttpGetExecutor;
+	
+	@Mock
+	private HttpServletResponse mockHttpResponse;
+	
+	@Mock
+	private PrintWriter mockPrintWriter;
+	
+	@Captor
+	private ArgumentCaptor<HttpServletResponse> responseCaptor;
 	
 	@Before
 	public void before() {
@@ -57,6 +81,20 @@ public class AuthTest {
 		System.setProperty("SESSION_NAME_CLAIMS", "userid");
 		System.setProperty("SESSION_TAG_CLAIMS", "userid,user_name,team");
 		System.setProperty(Auth.PROPERTIES_FILENAME_PARAMETER, "test.properties");
+		
+		StringBuffer urlBuffer = new StringBuffer();
+		urlBuffer.append("https:www.foo.com/bar");
+		when(mockHttpRequest.getRequestURL()).thenReturn(urlBuffer);
+		when(mockHttpRequest.getRequestURI()).thenReturn("/bar");
+		
+		AssumeRoleResult assumeRoleResult = new AssumeRoleResult();
+		Credentials credentials = new Credentials();
+		credentials.setAccessKeyId("accessKeyId");
+		credentials.setSecretAccessKey("secretAccessKey");
+		credentials.setSessionToken("sessionToken");
+		assumeRoleResult.setCredentials(credentials);
+		when(mockStsClient.assumeRole(any())).thenReturn(assumeRoleResult);
+		
 	}
 	
 	@After
@@ -83,8 +121,23 @@ public class AuthTest {
 	public void testGetAuthUrl() {
 		Auth auth = new Auth();
 		
-		String expected = "https://signin.synapse.org?response_type=code&client_id=%s&redirect_uri=%s&claims={\"id_token\":{\"team\":{\"values\":[\"123456\",\"345678\"]},\"user_name\":{\"essential\":true},\"userid\":{\"essential\":true}},\"userinfo\":{\"team\":{\"values\":[\"123456\",\"345678\"]},\"user_name\":{\"essential\":true},\"userid\":{\"essential\":true}}}";
+		String expected = "https://signin.synapse.org?response_type=code&client_id=%s&redirect_uri=%s&claims="
+				+ "{\"id_token\":{\"team\":{\"values\":[\"123456\",\"345678\"]},\"user_name\":{\"essential\":true},"
+				+ "\"userid\":{\"essential\":true}},\"userinfo\":{\"team\":{\"values\":[\"123456\",\"345678\"]},\"user_name\":"
+				+ "{\"essential\":true},\"userid\":{\"essential\":true}}}";
 		String actual = auth.getAuthorizeUrl(null);
+		assertEquals(expected, actual);
+	}
+	
+	@Test
+	public void testGetAuthUrlWithState() {
+		Auth auth = new Auth();
+		
+		String expected = "https://signin.synapse.org?response_type=code&client_id=%s&redirect_uri=%s&claims="
+				+ "{\"id_token\":{\"team\":{\"values\":[\"123456\",\"345678\"]},\"user_name\":{\"essential\":true},"
+				+ "\"userid\":{\"essential\":true}},\"userinfo\":{\"team\":{\"values\":[\"123456\",\"345678\"]},\"user_name\":"
+				+ "{\"essential\":true},\"userid\":{\"essential\":true}}}&state=some-state";
+		String actual = auth.getAuthorizeUrl("some-state");
 		assertEquals(expected, actual);
 	}
 	
@@ -182,10 +235,6 @@ public class AuthTest {
 
 	@Test
 	public void testGetConsoleLoginURL() throws Exception {
-		StringBuffer urlBuffer = new StringBuffer();
-		urlBuffer.append("https:www.foo.com/bar");
-		when(req.getRequestURL()).thenReturn(urlBuffer);
-		when(req.getRequestURI()).thenReturn("/bar");
 		when(mockHttpGetExecutor.executeHttpGet(anyString())).thenReturn("{\"SigninToken\":\"token\"}");
 		
 		Credentials credentials = new Credentials();
@@ -196,12 +245,37 @@ public class AuthTest {
 		Auth auth = new Auth();
 		
 		// method under test
-		String actual = auth.getConsoleLoginURL(req, credentials, mockHttpGetExecutor);
+		String actual = auth.getConsoleLoginURL(mockHttpRequest, credentials, mockHttpGetExecutor);
 		
 		String expected = "https://signin.aws.amazon.com/federation?Action=login&SigninToken=token"+
 				 "&Issuer=https%3Awww.foo.com&Destination=https%3A%2F%2Fus-east-1.console.aws.amazon.com%2Fservicecatalog%2Fhome%3Fregion%3Dus-east-1%23%2Fproducts";
 		
 		assertEquals(expected, actual);
+	}
+	
+	@Test
+	public void testIsEntrypointUri() {
+		assertTrue(Auth.isEntrypointUri(null));
+		assertTrue(Auth.isEntrypointUri(""));
+		assertTrue(Auth.isEntrypointUri("/"));
+		assertTrue(Auth.isEntrypointUri("/ststoken"));
+		assertTrue(Auth.isEntrypointUri("/accesstoken"));
+		assertTrue(Auth.isEntrypointUri("/idtoken"));
+		
+		assertFalse(Auth.isEntrypointUri("/synapse"));
+		assertFalse(Auth.isEntrypointUri("/about"));
+		assertFalse(Auth.isEntrypointUri("/random"));
+	}
+	
+	@Test
+	public void tesGgetRequestTypeFromUri() {
+		assertEquals(RequestType.SC_CONSOLE, Auth.getRequestTypeFromUri("/"));
+		assertEquals(RequestType.SC_CONSOLE, Auth.getRequestTypeFromUri(""));
+		assertEquals(RequestType.SC_CONSOLE, Auth.getRequestTypeFromUri(null));
+		assertEquals(RequestType.STS_TOKEN, Auth.getRequestTypeFromUri("/ststoken"));
+		assertEquals(RequestType.ACCESS_TOKEN, Auth.getRequestTypeFromUri("/accesstoken"));
+		assertEquals(RequestType.ID_TOKEN, Auth.getRequestTypeFromUri("/idtoken"));
+		assertThrows(IllegalArgumentException.class, ()->{Auth.getRequestTypeFromUri("/about");});
 	}
 	
 	@Test 
@@ -279,4 +353,97 @@ public class AuthTest {
 		assertEquals("                  ", Auth.sanitizeTagValue("!#$%^&*(){}|\"';<>,"));
 	}
 
+	@Test
+	public void testRedirectToSCConsole() throws Exception {
+		String selectedTeam = "10101";
+		String roleArn = "arn:aws:iam::foo";
+
+		System.setProperty("SESSION_NAME_CLAIMS", "userid,user_name");
+		
+		Claims claims = new DefaultClaims();
+		Auth auth = new Auth(mockStsClient);
+
+		when(mockHttpGetExecutor.executeHttpGet(anyString())).thenReturn("{\"SigninToken\":\"token\"}");
+		
+		// method under test
+		auth.redirectToSCConsole(claims, roleArn, selectedTeam, mockHttpGetExecutor, mockHttpRequest, mockHttpResponse);
+		
+		verify(mockHttpResponse).setStatus(303);
+		String expectedConsoleRedirUrl = "https://signin.aws.amazon.com/federation?Action=login&"
+				+ "SigninToken=token&Issuer=https%3Awww.foo.com&Destination=https%3A%2F%2Fus-east-1.console.aws.amazon.com"
+				+ "%2Fservicecatalog%2Fhome%3Fregion%3Dus-east-1%23%2Fproducts";
+		verify(mockHttpResponse).setHeader("Location", expectedConsoleRedirUrl);
+	}
+	
+
+	@Test
+	public void testWriteFileToResponse() throws Exception {
+		when(mockHttpResponse.getWriter()).thenReturn(mockPrintWriter);
+
+		String expectedContent = "file-content";
+		byte[] expectedBytes = expectedContent.getBytes(Charset.forName("UTF8"));
+		
+		// method under test
+		Auth.writeFileToResponse(expectedContent, "file.txt", mockHttpResponse);
+		
+		verify(mockHttpResponse).setStatus(200);
+		verify(mockHttpResponse).setContentType("application/force-download");
+		verify(mockHttpResponse).setCharacterEncoding("UTF-8");
+		verify(mockHttpResponse).setHeader("Content-Transfer-Encoding", "binary");
+		verify(mockHttpResponse).setHeader("Cache-Control", "no-store, no-cache");
+		verify(mockHttpResponse).setHeader("Content-Disposition","attachment; filename=\"file.txt\"");
+		verify(mockPrintWriter).print(expectedBytes);
+		verify(mockHttpResponse).setContentLength(expectedBytes.length);		
+		verify(mockPrintWriter).flush();
+	}
+	
+	@Test
+	public void testReturnStsToken() throws Exception {
+		String selectedTeam = "10101";
+		String roleArn = "arn:aws:iam::foo";
+
+		System.setProperty("SESSION_NAME_CLAIMS", "userid,user_name");
+		
+		Claims claims = new DefaultClaims();
+		Auth auth = new Auth(mockStsClient);
+		
+		when(mockHttpResponse.getWriter()).thenReturn(mockPrintWriter);
+
+		String expectedContent = "[default]\nAccessKeyId = accessKeyId\nSecretAccessKey = secretAccessKey\nSessionToken = sessionToken";
+		byte[] expectedBytes = expectedContent.getBytes(Charset.forName("UTF8"));
+		
+		// method under test
+		auth.returnStsToken(claims, roleArn, selectedTeam, mockHttpResponse);
+		
+		verify(mockHttpResponse).setHeader("Content-Disposition","attachment; filename=\"config\"");
+		verify(mockPrintWriter).print(expectedBytes);
+		verify(mockHttpResponse).setContentLength(expectedBytes.length);		
+	}
+	
+	@Test
+	public void testCreateCLIProfile() throws Exception {
+		Map<String,String> content = new LinkedHashMap<String,String>();
+		content.put("key1", "foo");
+		content.put("key2", "bar");
+		String expectedProfile = "[default]\nkey1 = foo\nkey2 = bar";
+		
+		// method under test
+		assertEquals(expectedProfile, Auth.createAWSCliProfile(content));
+	}
+	
+	@Test
+	public void testReturnToken() throws Exception {
+		Auth auth = new Auth(mockStsClient);		
+		String expectedContent = "token";
+		byte[] expectedBytes = expectedContent.getBytes(Charset.forName("UTF8"));
+		when(mockHttpResponse.getWriter()).thenReturn(mockPrintWriter);
+		
+		// method under test
+		auth.returnOidcToken(expectedContent, mockHttpResponse);
+		
+		verify(mockHttpResponse).setHeader("Content-Disposition","attachment; filename=\"synapse_oidc_token\"");
+		verify(mockPrintWriter).print(expectedBytes);
+		verify(mockHttpResponse).setContentLength(expectedBytes.length);		
+	}
+	
 }
