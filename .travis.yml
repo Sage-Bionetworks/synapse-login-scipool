@@ -6,7 +6,7 @@ cache:
   directories:
   - $HOME/.m2
 before_install:
-  - pyenv install --force 3.7.1
+#  - pyenv install --force 3.7.1
   - pyenv global 3.7.1
 install:
   - pip install pre-commit travis-wait-improved awsebcli
