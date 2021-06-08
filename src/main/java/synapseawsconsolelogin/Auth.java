@@ -68,12 +68,35 @@ public class Auth extends HttpServlet {
 	private static final String CLAIMS_TEMPLATE = "{\"team\":{\"values\":[\"%1$s\"]},%2$s}";
 	private static final String CLAIM_TEMPLATE="\"%1$s\":{\"essential\":true}";
 	private static final String TOKEN_URL = "https://repo-prod.prod.sagebase.org/auth/v1/oauth2/token";
+	
+	/*
+	 * The default endpoint is the empty string or null, which 
+	 * logs the user in to Service Catalog.
+	 * The following are the supported alternate endpoints.
+	 */
+	private static final String STS_TOKEN_URI = "/ststoken"; // download STS token for the role indicated by the TEAM_TO_ROLE_ARN_MAP
+	private static final String ACCESS_TOKEN_URI = "/accesstoken"; // download the OIDC access token returned by Synapse
+	private static final String ID_TOKEN_URI = "/idtoken"; // download the OIDC ID token returned by Synapse
+
+	/*
+	 * This is the endpoint that Synapse redirects back to after logging the user in.
+	 */
 	private static final String REDIRECT_URI = "/synapse";
-	private static final String STS_TOKEN_URI = "/ststoken";
-	private static final String ACCESS_TOKEN_URI = "/accesstoken";
-	private static final String ID_TOKEN_URI = "/idtoken";
+	
+	/*
+	 * This is the URI that AWS uses to check the system's health
+	 */
 	private static final String HEALTH_URI = "/health";
+	
+	/*
+	 * This is the URI that returns the application's version
+	 */
 	public static final String ABOUT_URI = "/about";
+	
+	/*
+	 * This is the URI that returns the 'sector identifier' information.  
+	 * For details, see https://openid.net/specs/openid-connect-core-1_0.html#PairwiseAlg
+	 */
 	public static final String SECTOR_IDENTIFIER_URI  = "/redirect_uris.json";
 
 	private static final String STATE = "state";
@@ -106,7 +129,14 @@ public class Auth extends HttpServlet {
 	
 	private static final String NONCE_TAG_NAME = "nonce";
 	
+	/*
+	 * File name for the AWS config file containing the downloaded STS token
+	 */
 	private static final String STS_TOKEN_FILE_NAME = "config";
+	
+	/*
+	 * File name for the downloaded OIDC (ID or access) token
+	 */
 	private static final String OIDC_TOKEN_FILE_NAME = "synapse_oidc_token";
 
 	private Map<String,String> teamToRoleMap;
@@ -169,6 +199,13 @@ public class Auth extends HttpServlet {
 		return getCommaSeparatedPropertyAsList(REDIRECT_URIS_PROPERTY_NAME, defaultRedirectURI);
 	}
 
+	/**
+	 * 
+	 * @param state the state to be carried through authentication and returned to this 
+	 * server when Synapse is done authenticating the user.  If null then no 'state' request
+	 * parameter will be included in the request
+	 * @return the URL that the browser should be redirect to in order to authenticate with Synapse
+	 */
 	public String getAuthorizeUrl(String state) {
 		Set<String> allClaims = new TreeSet<String>(getSessionClaimNames());
 		allClaims.addAll(getTagClaimNames());
@@ -347,14 +384,26 @@ public class Auth extends HttpServlet {
 		}
 	}
 	
-	static boolean isRedirectUri(String uri) {
-		return "/".equals(uri) || 
+	/**
+	 * Determines whether the URI is one of the entrypoints to this application
+	 * @param uri The URI (omitting the scheme, host and optional port)
+	 * @return true if and only if the uri is one of the expected entrypoints
+	 */
+	static boolean isEntrypointUri(String uri) {
+		return "/".equals(uri) || // note: The default entrypoint is the empty string
 				StringUtils.isEmpty(uri) ||
 				STS_TOKEN_URI.equals(uri) ||
 				ID_TOKEN_URI.equals(uri) ||
 				ACCESS_TOKEN_URI.equals(uri);
 	}
 	
+	/**
+	 * Maps the entrypoint URI to one of an enumeration of requests
+	 * (redirect to Service Catalog, download an STS file, download a token, etc.)
+	 * 
+	 * @param uri the entrypoint URI
+	 * @return the mapped ENUM
+	 */
 	static RequestType getRequestTypeFromUri(String uri) {
 		if (uri.equals("/") || StringUtils.isEmpty(uri)) {
 			return RequestType.SC_CONSOLE;
@@ -371,6 +420,15 @@ public class Auth extends HttpServlet {
 		throw new IllegalArgumentException("Unrecognized uri: "+uri);
 	}
 	
+	/**
+	 * Construct the HTTP redirect response that sends the browser to the Service Catalog console
+	 * @param claims
+	 * @param roleArn
+	 * @param selectedTeam
+	 * @param req
+	 * @param resp
+	 * @throws IOException
+	 */
 	private void redirectToSCConsole(Claims claims, String roleArn, String selectedTeam, HttpServletRequest req, HttpServletResponse resp) throws IOException {
 		AssumeRoleRequest assumeRoleRequest = createAssumeRoleRequest(claims, roleArn, selectedTeam);
 		
@@ -392,6 +450,17 @@ public class Auth extends HttpServlet {
 		resp.setStatus(303);		
 	}
 	
+	/**
+	 * Create the HTTP response to download a file containing the STS token
+	 * which will allow the bearer to assume the end-user role. The file is
+	 * in the format of an AWS CLI config file.
+	 * 
+	 * @param claims
+	 * @param roleArn
+	 * @param selectedTeam
+	 * @param resp
+	 * @throws IOException
+	 */
 	private void returnStsToken(Claims claims, String roleArn, String selectedTeam, HttpServletResponse resp) throws IOException {
 		AssumeRoleRequest assumeRoleRequest = createAssumeRoleRequest(claims, roleArn, selectedTeam);
 		
@@ -405,6 +474,11 @@ public class Auth extends HttpServlet {
 		writeFileToResponse(createAWSCliProfile(sts), STS_TOKEN_FILE_NAME, resp);
 	}
 	
+	/**
+	 * Create the AWS CLI config file content for a Map of key-value pairs
+	 * @param content
+	 * @return
+	 */
 	public static String createAWSCliProfile(Map<String,String> content) {
 		StringBuilder sb = new StringBuilder("[default]");
 		for (Entry<String,String> entry: content.entrySet()) {
@@ -416,6 +490,14 @@ public class Auth extends HttpServlet {
 		return sb.toString();
 	}
 	
+	/**
+	 * Create the HTTP response for downloading a file
+	 * 
+	 * @param content the file content
+	 * @param filename the file name
+	 * @param resp the HTTP response to write the result to
+	 * @throws IOException
+	 */
 	public static void writeFileToResponse(String content, String filename, HttpServletResponse resp) throws IOException {
 		resp.setStatus(200);		
 		resp.setContentType("application/force-download");
@@ -431,6 +513,12 @@ public class Auth extends HttpServlet {
 		}
 	}
 		
+	/**
+	 * Create the HTTP response that downloads a file containing a token
+	 * @param token
+	 * @param resp
+	 * @throws IOException
+	 */
 	private void returnToken(String token, HttpServletResponse resp) throws IOException {
 		writeFileToResponse(token, OIDC_TOKEN_FILE_NAME, resp);
 	}
@@ -440,7 +528,7 @@ public class Auth extends HttpServlet {
 		
 		OAuth2Api.BasicOAuth2Service service = null;
 		String uri = req.getRequestURI();
-		if (isRedirectUri(uri)) {
+		if (isEntrypointUri(uri)) {
 			// this is the initial redirect to go log in with Synapse
 			String redirectBackUrl = getRedirectBackUrlSynapse(req);
 			String state = getRequestTypeFromUri(uri).name();
