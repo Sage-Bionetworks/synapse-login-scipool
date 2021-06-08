@@ -1,6 +1,6 @@
 # Overview
 This app logs in to the AWS Console using Synapse as the OpenID Connect
-(OIDC) identity provider
+(OIDC) identity provider.
 
 ## Configurations
 The app is configured with parameters listed below, which can be passed as
