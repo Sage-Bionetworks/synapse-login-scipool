@@ -146,6 +146,9 @@ public class Auth extends HttpServlet {
 	private String awsConsoleUrl;
 	private String appVersion = null;
 	private AWSSecurityTokenService stsClient = null;
+	private HttpGetExecutor httpGetExecutor	= null;
+	private TokenRetriever tokenRetriever = null;
+	private JWTClaimsExtractor jwtClaimsExtractor = null;
 	
 	Map<String,String> getTeamToRoleMap() throws JSONException {
 		String jsonString = getProperty(TEAM_TO_ROLE_ARN_MAP_PARAMETER);
@@ -163,8 +166,14 @@ public class Auth extends HttpServlet {
 		return result;
 	}
 
-	private void init(AWSSecurityTokenService stsClient) {
+	private void init(AWSSecurityTokenService stsClient, 
+			HttpGetExecutor httpGetExecutor, 
+			TokenRetriever tokenRetriever,
+			JWTClaimsExtractor jwtClaimsExtractor) {
 		this.stsClient = stsClient;
+		this.httpGetExecutor = httpGetExecutor;
+		this.tokenRetriever = tokenRetriever;
+		this.jwtClaimsExtractor = jwtClaimsExtractor;
 		initProperties();
 		appVersion = initAppVersion();
 		ssmParameterCache = new Properties();
@@ -179,26 +188,51 @@ public class Auth extends HttpServlet {
 		awsConsoleUrl = String.format(AWS_CONSOLE_URL_TEMPLATE, awsRegion);
 	}
 	
-	private static final HttpGetExecutor HTTP_EXECUTOR = new HttpGetExecutor() {
-		@Override
-		public String executeHttpGet(String urlString) throws IOException {
-			URL url = new URL(urlString);
-			URLConnection conn = url.openConnection();
-			BufferedReader bufferReader = new BufferedReader(
-					new InputStreamReader(conn.getInputStream()));  
-			return bufferReader.readLine();
-		}
-	};
-
-	public Auth(AWSSecurityTokenService stsClient) {
-		init(stsClient);
+	/*
+	 * For testing
+	 */
+	public Auth(AWSSecurityTokenService stsClient, 
+			HttpGetExecutor httpGetExecutor, 
+			TokenRetriever tokenRetriever,
+			JWTClaimsExtractor jwtClaimsExtractor) {
+		init(stsClient, httpGetExecutor, tokenRetriever, jwtClaimsExtractor);
 	}
 		
 	public Auth() {
 		String awsRegion = getProperty(AWS_REGION_PARAMETER);
 		AWSSecurityTokenService stsClient = AWSSecurityTokenServiceClientBuilder.standard()
 				.withRegion(Regions.fromName(awsRegion)).build();
-		init(stsClient);
+		
+		HttpGetExecutor httpExecutor = new HttpGetExecutor() {
+			@Override
+			public String executeHttpGet(String urlString) throws IOException {
+				URL url = new URL(urlString);
+				URLConnection conn = url.openConnection();
+				BufferedReader bufferReader = new BufferedReader(
+						new InputStreamReader(conn.getInputStream()));  
+				return bufferReader.readLine();
+			}
+		};
+		
+		TokenRetriever tokenRetriever = new TokenRetriever() {
+			@Override
+			public IdAndAccessToken getTokens(String redirectUrl, String authorizationCode) {
+				OAuth2Api.BasicOAuth2Service service = (OAuth2Api.BasicOAuth2Service)(new OAuth2Api(null, TOKEN_URL)).
+						createService(new OAuthConfig(getClientIdSynapse(), getClientSecretSynapse(), redirectUrl, null, null, null));
+				return service.getIdAndAccessTokens(null, new Verifier(authorizationCode));
+			}
+			
+		};
+		
+		JWTClaimsExtractor jwtClaimsExtractor = new JWTClaimsExtractor() {
+			@Override
+			public Claims extractClaims(String jwtString) {
+				Jwt<Header,Claims> jwt = parseJWT(jwtString);
+				return jwt.getBody();
+			}
+		};
+
+		init(stsClient, httpExecutor, tokenRetriever, jwtClaimsExtractor);
 	}
 
 	
@@ -293,7 +327,7 @@ public class Auth extends HttpServlet {
 	}
 	
 	// from https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_enable-console-custom-url.html#STSConsoleLink_programJava
-	String getConsoleLoginURL(HttpServletRequest req, Credentials federatedCredentials, HttpGetExecutor httpGetExecutor) throws IOException {
+	String getConsoleLoginURL(HttpServletRequest req, Credentials federatedCredentials) throws IOException {
 
 		String issuerURL = getThisEndpoint(req);
 
@@ -318,7 +352,7 @@ public class Auth extends HttpServlet {
 		String getSigninTokenURL = String.format(SIGNIN_TOKEN_URL_TEMPLATE, 
 				sessionTimeoutSeconds, URLEncoder.encode(sessionJson,UTF8));
 
-		String returnContent = httpGetExecutor.executeHttpGet(getSigninTokenURL);
+		String returnContent = this.httpGetExecutor.executeHttpGet(getSigninTokenURL);
 
 		String signinToken = new JSONObject(returnContent).getString("SigninToken");
 
@@ -450,13 +484,13 @@ public class Auth extends HttpServlet {
 	 * @param resp
 	 * @throws IOException
 	 */
-	void redirectToSCConsole(Claims claims, String roleArn, String selectedTeam, HttpGetExecutor httpExecutor, HttpServletRequest req, HttpServletResponse resp) throws IOException {
+	void redirectToSCConsole(Claims claims, String roleArn, String selectedTeam, HttpServletRequest req, HttpServletResponse resp) throws IOException {
 		AssumeRoleRequest assumeRoleRequest = createAssumeRoleRequest(claims, roleArn, selectedTeam);
 		
 		AssumeRoleResult assumeRoleResult = stsClient.assumeRole(assumeRoleRequest);
 		Credentials credentials = assumeRoleResult.getCredentials();
 		// redirect to AWS login
-		String redirectURL = getConsoleLoginURL(req, credentials, httpExecutor);
+		String redirectURL = getConsoleLoginURL(req, credentials);
 		
 		resp.setHeader(LOCATION, redirectURL);
 		resp.setStatus(303);		
@@ -538,7 +572,6 @@ public class Auth extends HttpServlet {
 	private void doGetIntern(HttpServletRequest req, HttpServletResponse resp)
 				throws Exception {
 		
-		OAuth2Api.BasicOAuth2Service service = null;
 		String uri = req.getRequestURI();
 		if (isEntrypointUri(uri)) {
 			// this is the initial redirect to go log in with Synapse
@@ -551,21 +584,18 @@ public class Auth extends HttpServlet {
 		}	else if (uri.equals(REDIRECT_URI)) {
 			// this is the second step, after logging in to Synapse
 			String state = req.getParameter(STATE);
-			service = (OAuth2Api.BasicOAuth2Service)(new OAuth2Api(getAuthorizeUrl(state), TOKEN_URL)).
-					createService(new OAuthConfig(getClientIdSynapse(), getClientSecretSynapse(), getRedirectBackUrlSynapse(req), null, null, null));
 			String authorizationCode = req.getParameter("code");
 			IdAndAccessToken tokens = null;
 			
 			try {
-				tokens = service.getIdAndAccessTokens(null, new Verifier(authorizationCode));
+				 tokens = this.tokenRetriever.getTokens(getRedirectBackUrlSynapse(req), authorizationCode);
 			} catch (OAuthException e) {
 				handleException(e, resp);
 				return;
 			}
 			
 			// parse ID Token
-			Jwt<Header,Claims> jwt = parseJWT(tokens.getIdToken().getToken());
-			Claims claims = jwt.getBody();
+			Claims claims = jwtClaimsExtractor.extractClaims(tokens.getIdToken().getToken());
 			List<String> teamIds = claims.get(TEAM_CLAIM_NAME, List.class);
 			
 			String selectedTeam = null;
@@ -597,7 +627,7 @@ public class Auth extends HttpServlet {
 			// we take different actions for different services
 			switch(RequestType.valueOf(state)) {
 			case SC_CONSOLE:
-				redirectToSCConsole(claims, roleArn, selectedTeam, HTTP_EXECUTOR, req, resp);
+				redirectToSCConsole(claims, roleArn, selectedTeam, req, resp);
 				break;
 			case STS_TOKEN:
 				returnStsToken(claims, roleArn, selectedTeam, resp);

@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import javax.servlet.ServletOutputStream;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
@@ -28,10 +29,9 @@ import org.junit.Assume;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.mockito.ArgumentCaptor;
-import org.mockito.Captor;
 import org.mockito.Mock;
 import org.mockito.runners.MockitoJUnitRunner;
+import org.scribe.model.Token;
 
 import com.amazonaws.AmazonClientException;
 import com.amazonaws.SdkClientException;
@@ -58,6 +58,9 @@ public class AuthTest {
 	
 	@Mock
 	private AWSSecurityTokenService mockStsClient;
+	
+	@Mock
+	private TokenRetriever mockTokenRetriever;
 
 	@Mock
 	private HttpServletRequest mockHttpRequest;
@@ -66,28 +69,56 @@ public class AuthTest {
 	private HttpGetExecutor mockHttpGetExecutor;
 	
 	@Mock
+	private JWTClaimsExtractor mockJWTClaimsExtractor;
+	
+	@Mock
 	private HttpServletResponse mockHttpResponse;
 	
 	@Mock
 	private PrintWriter mockPrintWriter;
 	
-	@Captor
-	private ArgumentCaptor<HttpServletResponse> responseCaptor;
+	@Mock
+	private ServletOutputStream mockOutputStream;
+	
+	private static final String SC_CONSOLE_LOGIN_URL = "https://signin.aws.amazon.com/federation?Action=login&SigninToken=token"+
+			 "&Issuer=https%3A%2F%2Fwww.foo.com&Destination=https%3A%2F%2Fus-east-1.console.aws.amazon.com%2Fservicecatalog%2Fhome%3Fregion%3Dus-east-1%23%2Fproducts";
+	
+	private Auth auth = null;
+	
+	private static final String ID_TOKEN = "id-token";
+	private static final String ACCESS_TOKEN = "access-token";
+	
+	private Claims claims;
+
+	private void mockIncomingUrl(String host, String uri) {
+		StringBuffer urlBuffer = new StringBuffer();
+		urlBuffer.append(host);
+		urlBuffer.append(uri);
+		when(mockHttpRequest.getRequestURL()).thenReturn(urlBuffer);
+		when(mockHttpRequest.getRequestURI()).thenReturn(uri);
+		claims = new DefaultClaims();
+		claims.put("team", Collections.singletonList("345678"));
+		when(mockJWTClaimsExtractor.extractClaims(ID_TOKEN)).thenReturn(claims);
+	}
 	
 	@Before
-	public void before() {
+	public void before() throws Exception {
 		System.setProperty("TEAM_TO_ROLE_ARN_MAP","[{\"teamId\":\"123456\",\"roleArn\":\"arn:aws:iam::foo\"},{\"teamId\":\"345678\",\"roleArn\":\"arn:aws:iam::bar\"}]");
 		System.setProperty("AWS_REGION", "us-east-1");
 		System.setProperty("SESSION_NAME_CLAIMS", "userid");
 		System.setProperty("SESSION_TAG_CLAIMS", "userid,user_name,team");
 		System.setProperty(Auth.PROPERTIES_FILENAME_PARAMETER, "test.properties");
+		System.setProperty(Auth.SYNAPSE_OAUTH_CLIENT_ID_PARAMETER, "101");
+		System.setProperty(Auth.SYNAPSE_OAUTH_CLIENT_SECRET_PARAMETER, "thesecret");
 		
-		StringBuffer urlBuffer = new StringBuffer();
-		urlBuffer.append("https:www.foo.com/bar");
-		when(mockHttpRequest.getRequestURL()).thenReturn(urlBuffer);
-		when(mockHttpRequest.getRequestURI()).thenReturn("/bar");
+		
+		mockIncomingUrl("https://www.foo.com", "/bar");
+
+		when(mockHttpResponse.getWriter()).thenReturn(mockPrintWriter);
+		when(mockHttpResponse.getOutputStream()).thenReturn(mockOutputStream);
 		
 		AssumeRoleResult assumeRoleResult = new AssumeRoleResult();
+		
 		Credentials credentials = new Credentials();
 		credentials.setAccessKeyId("accessKeyId");
 		credentials.setSecretAccessKey("secretAccessKey");
@@ -95,6 +126,10 @@ public class AuthTest {
 		assumeRoleResult.setCredentials(credentials);
 		when(mockStsClient.assumeRole(any())).thenReturn(assumeRoleResult);
 		
+		IdAndAccessToken idAndAccessToken = new IdAndAccessToken(new Token(ID_TOKEN, ""), new Token(ACCESS_TOKEN, ""));
+		when(mockTokenRetriever.getTokens(anyString(), anyString())).thenReturn(idAndAccessToken);
+		
+		this.auth = new Auth(mockStsClient, mockHttpGetExecutor, mockTokenRetriever, mockJWTClaimsExtractor);
 	}
 	
 	@After
@@ -104,12 +139,12 @@ public class AuthTest {
 		System.clearProperty("SESSION_TAG_CLAIMS");
 		System.clearProperty("SESSION_NAME_CLAIMS");
 		System.clearProperty(TEST_PROPERTY_NAME);
+		System.clearProperty(Auth.SYNAPSE_OAUTH_CLIENT_ID_PARAMETER);
+		System.clearProperty(Auth.SYNAPSE_OAUTH_CLIENT_SECRET_PARAMETER);
 	}
 	
 	@Test
 	public void testReadTeamToArnMap() {
-		Auth auth = new Auth();
-		
 		Map<String,String> map = auth.getTeamToRoleMap();
 		assertEquals(2, map.size());
 		String key = map.keySet().iterator().next();
@@ -119,8 +154,6 @@ public class AuthTest {
 	
 	@Test
 	public void testGetAuthUrl() {
-		Auth auth = new Auth();
-		
 		String expected = "https://signin.synapse.org?response_type=code&client_id=%s&redirect_uri=%s&claims="
 				+ "{\"id_token\":{\"team\":{\"values\":[\"123456\",\"345678\"]},\"user_name\":{\"essential\":true},"
 				+ "\"userid\":{\"essential\":true}},\"userinfo\":{\"team\":{\"values\":[\"123456\",\"345678\"]},\"user_name\":"
@@ -131,8 +164,6 @@ public class AuthTest {
 	
 	@Test
 	public void testGetAuthUrlWithState() {
-		Auth auth = new Auth();
-		
 		String expected = "https://signin.synapse.org?response_type=code&client_id=%s&redirect_uri=%s&claims="
 				+ "{\"id_token\":{\"team\":{\"values\":[\"123456\",\"345678\"]},\"user_name\":{\"essential\":true},"
 				+ "\"userid\":{\"essential\":true}},\"userinfo\":{\"team\":{\"values\":[\"123456\",\"345678\"]},\"user_name\":"
@@ -144,7 +175,6 @@ public class AuthTest {
 	@Test
 	public void testGetPropertyFromGlobalPropertiesFile() {
 		String value = "testPropertyValue";
-		Auth auth = new Auth();
 		
 		assertEquals(value, auth.getProperty(TEST_PROPERTY_NAME));
 		
@@ -154,14 +184,12 @@ public class AuthTest {
 	public void testGetPropertyOverridingFileWithProperty() {
 		String value = "someOtherValue";
 		System.setProperty(TEST_PROPERTY_NAME, value);
-		Auth auth = new Auth();
 		assertEquals(value, auth.getProperty(TEST_PROPERTY_NAME));
 	}
 
 	@Test
 	public void testGetMissingOptionalProperty() {
 		Assume.assumeTrue(System.getProperty("SKIP_AWS")==null);
-		Auth auth = new Auth();
 		assertNull(auth.getProperty("undefined-property", false));
 	}
 	
@@ -180,8 +208,6 @@ public class AuthTest {
 		String propertyName = UUID.randomUUID().toString();
 		String ssmKey = UUID.randomUUID().toString();
 		String propertyValue = UUID.randomUUID().toString();
-		
-		Auth auth = new Auth();
 		
 		// the property has NOT been stored yet
 		assertNull(auth.getProperty(propertyName, false));
@@ -222,8 +248,6 @@ public class AuthTest {
 		String propertyName = UUID.randomUUID().toString();
 		String ssmKey = UUID.randomUUID().toString();
 
-		Auth auth = new Auth();
-
 		// the property name hasn't been stored at all
 		assertNull(auth.getProperty(propertyName, false));
 
@@ -242,15 +266,10 @@ public class AuthTest {
 		credentials.setSecretAccessKey("keySecret");
 		credentials.setSessionToken("token");
 		
-		Auth auth = new Auth();
-		
 		// method under test
-		String actual = auth.getConsoleLoginURL(mockHttpRequest, credentials, mockHttpGetExecutor);
+		String actual = auth.getConsoleLoginURL(mockHttpRequest, credentials);
 		
-		String expected = "https://signin.aws.amazon.com/federation?Action=login&SigninToken=token"+
-				 "&Issuer=https%3Awww.foo.com&Destination=https%3A%2F%2Fus-east-1.console.aws.amazon.com%2Fservicecatalog%2Fhome%3Fregion%3Dus-east-1%23%2Fproducts";
-		
-		assertEquals(expected, actual);
+		assertEquals(SC_CONSOLE_LOGIN_URL, actual);
 	}
 	
 	@Test
@@ -287,7 +306,6 @@ public class AuthTest {
 		System.setProperty("SESSION_NAME_CLAIMS", "userid,user_name");
 		
 		Claims claims = new DefaultClaims();
-		Auth auth = new Auth();
 		List<String> teams = new ArrayList<String>();
 		teams.add("888");
 		teams.add("999");
@@ -319,7 +337,6 @@ public class AuthTest {
 
 	@Test
 	public void testInitApp() {
-		Auth auth = new Auth();
 		String version = auth.getAppVersion();
 		assertEquals(String.format("%1$s-%2$s", "20200201-11:55", "0.1-3-g8eda288"), version);
 	}
@@ -332,16 +349,12 @@ public class AuthTest {
 		expected.add("foo");
 		expected.add("bar");
 		
-		Auth auth = new Auth();
-		
 		assertEquals(expected, auth.getRedirectURIs("baz"));
 	}
 
 	@Test
 	public void testRedirectURIsDefault() {
 		System.clearProperty("REDIRECT_URIS");
-		
-		Auth auth = new Auth();
 		
 		assertEquals(Collections.singletonList("baz"), auth.getRedirectURIs("baz"));
 	}
@@ -361,25 +374,19 @@ public class AuthTest {
 		System.setProperty("SESSION_NAME_CLAIMS", "userid,user_name");
 		
 		Claims claims = new DefaultClaims();
-		Auth auth = new Auth(mockStsClient);
 
 		when(mockHttpGetExecutor.executeHttpGet(anyString())).thenReturn("{\"SigninToken\":\"token\"}");
 		
 		// method under test
-		auth.redirectToSCConsole(claims, roleArn, selectedTeam, mockHttpGetExecutor, mockHttpRequest, mockHttpResponse);
+		auth.redirectToSCConsole(claims, roleArn, selectedTeam, mockHttpRequest, mockHttpResponse);
 		
 		verify(mockHttpResponse).setStatus(303);
-		String expectedConsoleRedirUrl = "https://signin.aws.amazon.com/federation?Action=login&"
-				+ "SigninToken=token&Issuer=https%3Awww.foo.com&Destination=https%3A%2F%2Fus-east-1.console.aws.amazon.com"
-				+ "%2Fservicecatalog%2Fhome%3Fregion%3Dus-east-1%23%2Fproducts";
-		verify(mockHttpResponse).setHeader("Location", expectedConsoleRedirUrl);
+		verify(mockHttpResponse).setHeader("Location", SC_CONSOLE_LOGIN_URL);
 	}
 	
 
 	@Test
 	public void testWriteFileToResponse() throws Exception {
-		when(mockHttpResponse.getWriter()).thenReturn(mockPrintWriter);
-
 		String expectedContent = "file-content";
 		byte[] expectedBytes = expectedContent.getBytes(Charset.forName("UTF8"));
 		
@@ -405,10 +412,7 @@ public class AuthTest {
 		System.setProperty("SESSION_NAME_CLAIMS", "userid,user_name");
 		
 		Claims claims = new DefaultClaims();
-		Auth auth = new Auth(mockStsClient);
 		
-		when(mockHttpResponse.getWriter()).thenReturn(mockPrintWriter);
-
 		String expectedContent = "[default]\nAccessKeyId = accessKeyId\nSecretAccessKey = secretAccessKey\nSessionToken = sessionToken";
 		byte[] expectedBytes = expectedContent.getBytes(Charset.forName("UTF8"));
 		
@@ -433,10 +437,8 @@ public class AuthTest {
 	
 	@Test
 	public void testReturnToken() throws Exception {
-		Auth auth = new Auth(mockStsClient);		
 		String expectedContent = "token";
 		byte[] expectedBytes = expectedContent.getBytes(Charset.forName("UTF8"));
-		when(mockHttpResponse.getWriter()).thenReturn(mockPrintWriter);
 		
 		// method under test
 		auth.returnOidcToken(expectedContent, mockHttpResponse);
@@ -444,6 +446,104 @@ public class AuthTest {
 		verify(mockHttpResponse).setHeader("Content-Disposition","attachment; filename=\"synapse_oidc_token\"");
 		verify(mockPrintWriter).print(expectedBytes);
 		verify(mockHttpResponse).setContentLength(expectedBytes.length);		
+	}
+	
+	@Test
+	public void testDoPost() throws Exception {
+		mockIncomingUrl("https://www.foo.com", "/");
+
+		// method under test
+		auth.doPost(mockHttpRequest, mockHttpResponse);
+		verify(mockHttpResponse).setStatus(404);
+	}
+	
+	@Test
+	public void testDoGet_RedirectUrl() throws Exception {
+		mockIncomingUrl("https://www.foo.com", "/");
+
+		// method under test
+		auth.doGet(mockHttpRequest, mockHttpResponse);
+		
+		verify(mockHttpResponse).setStatus(303);
+		String expectedRedirURL = "https://signin.synapse.org?response_type=code&client_id=101&"
+				+ "redirect_uri=https%3A%2F%2Fwww.foo.com%2Fsynapse&claims={\"id_token\":{\"team\":{\"values\":[\"123456\",\"345678\"]},"
+				+ "\"user_name\":{\"essential\":true},\"userid\":{\"essential\":true}},\"userinfo\":"
+				+ "{\"team\":{\"values\":[\"123456\",\"345678\"]},\"user_name\":{\"essential\":true},"
+				+ "\"userid\":{\"essential\":true}}}&state=SC_CONSOLE&scope=openid";
+		verify(mockHttpResponse).setHeader("Location", expectedRedirURL);
+	}
+	
+	
+	@Test
+	public void testDoGet_redirectToSCconsole() throws Exception {
+		mockIncomingUrl("https://www.foo.com", "/synapse");
+		when(mockHttpRequest.getParameter("code")).thenReturn("some-code");
+		when(mockHttpRequest.getParameter("state")).thenReturn(RequestType.SC_CONSOLE.name());
+
+		when(mockHttpGetExecutor.executeHttpGet(anyString())).thenReturn("{\"SigninToken\":\"token\"}");
+
+		// method under test
+		auth.doGet(mockHttpRequest, mockHttpResponse);
+		
+		verify(mockHttpResponse).setStatus(303);
+		verify(mockHttpResponse).setHeader("Location", SC_CONSOLE_LOGIN_URL);
+	}
+	
+	@Test
+	public void testDoGet_DownloadSTSToken() throws Exception {
+		mockIncomingUrl("https://www.foo.com", "/synapse");
+		when(mockHttpRequest.getParameter("code")).thenReturn("some-code");
+		when(mockHttpRequest.getParameter("state")).thenReturn(RequestType.STS_TOKEN.name());
+
+		// method under test
+		auth.doGet(mockHttpRequest, mockHttpResponse);
+		
+		verify(mockHttpResponse).setHeader("Content-Disposition","attachment; filename=\"config\"");
+		String expectedContent = "[default]\nAccessKeyId = accessKeyId\nSecretAccessKey = secretAccessKey\nSessionToken = sessionToken";
+		byte[] expectedBytes = expectedContent.getBytes(Charset.forName("UTF8"));
+		verify(mockPrintWriter).print(expectedBytes);
+		verify(mockHttpResponse).setContentLength(expectedBytes.length);		
+	}
+	
+	@Test
+	public void testDoGet_DownloadAccessToken() throws Exception {
+		mockIncomingUrl("https://www.foo.com", "/synapse");
+		when(mockHttpRequest.getParameter("code")).thenReturn("some-code");
+		when(mockHttpRequest.getParameter("state")).thenReturn(RequestType.ACCESS_TOKEN.name());
+
+		// method under test
+		auth.doGet(mockHttpRequest, mockHttpResponse);
+		
+		verify(mockHttpResponse).setHeader("Content-Disposition","attachment; filename=\"synapse_oidc_token\"");
+		byte[] expectedBytes = ACCESS_TOKEN.getBytes(Charset.forName("UTF8"));
+		verify(mockPrintWriter).print(expectedBytes);
+		verify(mockHttpResponse).setContentLength(expectedBytes.length);		
+	}
+	
+	@Test
+	public void testDoGet_DownloadIdToken() throws Exception {
+		mockIncomingUrl("https://www.foo.com", "/synapse");
+		when(mockHttpRequest.getParameter("code")).thenReturn("some-code");
+		when(mockHttpRequest.getParameter("state")).thenReturn(RequestType.ACCESS_TOKEN.name());
+
+		// method under test
+		auth.doGet(mockHttpRequest, mockHttpResponse);
+		
+		verify(mockHttpResponse).setHeader("Content-Disposition","attachment; filename=\"synapse_oidc_token\"");
+		byte[] expectedBytes = ACCESS_TOKEN.getBytes(Charset.forName("UTF8"));
+		verify(mockPrintWriter).print(expectedBytes);
+		verify(mockHttpResponse).setContentLength(expectedBytes.length);		
+	}
+	
+	@Test
+	public void testDoGet_unknown() throws Exception {
+		mockIncomingUrl("https://www.foo.com", "/unknown");
+
+		// method under test
+		auth.doGet(mockHttpRequest, mockHttpResponse);
+		
+		verify(mockHttpResponse).setStatus(303);
+		verify(mockHttpResponse).setHeader("Location", "https://www.foo.com");
 	}
 	
 }

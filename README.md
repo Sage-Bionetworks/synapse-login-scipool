@@ -1,6 +1,10 @@
 # Overview
-This app logs in to the AWS Console using Synapse as the OpenID Connect
-(OIDC) identity provider
+This application logs in to the AWS Console using Synapse as the OpenID Connect
+(OIDC) identity provider.  The application also provides the following alternate endpoints:
+
+`/ststoken`: returns an STS token as a config file suitable for using with the AWS CLI and providing the same permissions as one has in the AWS Console.
+`/accesstoken`: returns a Synapse access token for the user who has logged in to Synapse
+`/idtoken`: returns a Synapse OIDC id token for the user who has logged in to Synapse
 
 ## Configurations
 The app is configured with parameters listed below, which can be passed as
