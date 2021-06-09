@@ -38,6 +38,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 import org.scribe.exceptions.OAuthException;
 import org.scribe.model.OAuthConfig;
+import org.scribe.model.Token;
 import org.scribe.model.Verifier;
 
 import com.amazonaws.AmazonClientException;
@@ -67,7 +68,9 @@ public class Auth extends HttpServlet {
 	private static final String TEAM_CLAIM_NAME = "team";
 	private static final String CLAIMS_TEMPLATE = "{\"team\":{\"values\":[\"%1$s\"]},%2$s}";
 	private static final String CLAIM_TEMPLATE="\"%1$s\":{\"essential\":true}";
-	private static final String TOKEN_URL = "https://repo-prod.prod.sagebase.org/auth/v1/oauth2/token";
+	private static final String SYNAPSE_ENDPOINT = "https://repo-prod.prod.sagebase.org/auth/v1";
+	private static final String TOKEN_URL = SYNAPSE_ENDPOINT+"/oauth2/token";
+	private static final String USER_INFO_URL = SYNAPSE_ENDPOINT+"/oauth2/userinfo";
 	
 	/*
 	 * The default endpoint is the empty string or null, which 
@@ -92,6 +95,7 @@ public class Auth extends HttpServlet {
 	 * This is the URI that returns the application's version
 	 */
 	public static final String ABOUT_URI = "/about";
+	
 	
 	/*
 	 * This is the URI that returns the 'sector identifier' information.  
@@ -205,9 +209,12 @@ public class Auth extends HttpServlet {
 		
 		HttpGetExecutor httpExecutor = new HttpGetExecutor() {
 			@Override
-			public String executeHttpGet(String urlString) throws IOException {
+			public String executeHttpGet(String urlString, String accessToken) throws IOException {
 				URL url = new URL(urlString);
 				URLConnection conn = url.openConnection();
+				if (StringUtils.isNotEmpty(accessToken)) {
+					conn.setRequestProperty("Authorization", BEARER_PREFIX+accessToken);
+				}
 				BufferedReader bufferReader = new BufferedReader(
 						new InputStreamReader(conn.getInputStream()));  
 				return bufferReader.readLine();
@@ -352,7 +359,7 @@ public class Auth extends HttpServlet {
 		String getSigninTokenURL = String.format(SIGNIN_TOKEN_URL_TEMPLATE, 
 				sessionTimeoutSeconds, URLEncoder.encode(sessionJson,UTF8));
 
-		String returnContent = this.httpGetExecutor.executeHttpGet(getSigninTokenURL);
+		String returnContent = this.httpGetExecutor.executeHttpGet(getSigninTokenURL, null);
 
 		String signinToken = new JSONObject(returnContent).getString("SigninToken");
 
@@ -444,7 +451,7 @@ public class Auth extends HttpServlet {
 	 * @param uri The URI (omitting the scheme, host and optional port)
 	 * @return true if and only if the uri is one of the expected entrypoints
 	 */
-	static boolean isEntrypointUri(String uri) {
+	static boolean isOAuthEntrypointUri(String uri) {
 		return "/".equals(uri) || // note: The default entrypoint is the empty string
 				StringUtils.isEmpty(uri) ||
 				STS_TOKEN_URI.equals(uri) ||
@@ -558,6 +565,19 @@ public class Auth extends HttpServlet {
 			writer.flush();	
 		}
 	}
+	
+	private static final String BEARER_PREFIX = "Bearer ";
+	
+	static String getBearerAuthorizationToken(HttpServletRequest req) {
+		String authHeader = req.getHeader("Authorization");
+		if (StringUtils.isEmpty(authHeader)) {
+			return null;
+		}
+		if (authHeader.toLowerCase().startsWith(BEARER_PREFIX.toLowerCase())) {
+			return authHeader.substring(BEARER_PREFIX.length());
+		}
+		return null;
+	}
 		
 	/**
 	 * Create the HTTP response that downloads a file containing a token
@@ -568,22 +588,90 @@ public class Auth extends HttpServlet {
 	void returnOidcToken(String token, HttpServletResponse resp) throws IOException {
 		writeFileToResponse(token, OIDC_TOKEN_FILE_NAME, resp);
 	}
+	
+	private void returnToken(RequestType requestType, IdAndAccessToken idAndAccessTokens, HttpServletRequest req, HttpServletResponse resp) throws IOException {
+		// parse ID Token
+		Claims claims = jwtClaimsExtractor.extractClaims(idAndAccessTokens.getIdToken().getToken());
+		List<String> teamIds = claims.get(TEAM_CLAIM_NAME, List.class);
+		
+		String selectedTeam = null;
+		String roleArn = null;
+		for (String teamId : teamToRoleMap.keySet()) {
+			if (teamIds.contains(teamId)) {
+				selectedTeam = teamId;
+				roleArn = teamToRoleMap.get(teamId);
+				break;
+			}
+		}
+
+		if (roleArn==null) {
+			resp.setContentType("text/html");
+			try (ServletOutputStream os=resp.getOutputStream()) {
+				os.println("<html><head/><body>");
+				os.println("<h3>To proceed you must be a member of one of these Synapse teams:</h3>");
+				os.println("<ul>");
+				for (String teamId : teamToRoleMap.keySet()) {
+					os.println(String.format("<li><a href=\"https://www.synapse.org/#!Team:%1$s\">https://www.synapse.org/#!Team:%1$s</a></li>", teamId));
+				}
+				os.println("</ul>");
+				os.println("</body></html>");
+			}
+			resp.setStatus(200);
+			return;
+		}
+		
+		// we take different actions for different services
+		switch(requestType) {
+		case SC_CONSOLE:
+			redirectToSCConsole(claims, roleArn, selectedTeam, req, resp);
+			break;
+		case STS_TOKEN:
+			returnStsToken(claims, roleArn, selectedTeam, resp);
+			break;
+		case ID_TOKEN:
+			// creates file for use here: https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-role.html#cli-configure-role-oidc
+			returnOidcToken(idAndAccessTokens.getIdToken().getToken(), resp);
+			break;
+		case ACCESS_TOKEN:
+			returnOidcToken(idAndAccessTokens.getAccessToken().getToken(), resp);
+			break;
+		default:
+			throw new IllegalStateException("Unrecognized request type: "+requestType);
+		}
+	}
+	
+	private String getIdToken(String bearerToken) throws IOException {
+		return httpGetExecutor.executeHttpGet(USER_INFO_URL, bearerToken); // TODO add claims
+	}
 		
 	private void doGetIntern(HttpServletRequest req, HttpServletResponse resp)
 				throws Exception {
 		
 		String uri = req.getRequestURI();
-		if (isEntrypointUri(uri)) {
-			// this is the initial redirect to go log in with Synapse
-			String redirectBackUrl = getRedirectBackUrlSynapse(req);
-			String state = getRequestTypeFromUri(uri).name();
-			String redirectUrl = new OAuth2Api(getAuthorizeUrl(state), TOKEN_URL).
-					getAuthorizationUrl(new OAuthConfig(getClientIdSynapse(), null, redirectBackUrl, null, "openid", null));
-			resp.setHeader(LOCATION, redirectUrl);
-			resp.setStatus(303);
-		}	else if (uri.equals(REDIRECT_URI)) {
+		if (isOAuthEntrypointUri(uri)) {
+			String bearerAuthorizationToken = getBearerAuthorizationToken(req);
+			if (STS_TOKEN_URI.equals(uri) && StringUtils.isNotEmpty(bearerAuthorizationToken)) {
+				// this is the invocation of a web service
+				
+				// Get an OIDC id token from the userinfo endpoint
+				String idToken = getIdToken(bearerAuthorizationToken);
+				IdAndAccessToken idAndAccessToken = 
+						new IdAndAccessToken(new Token(idToken, ""), 
+								new Token(bearerAuthorizationToken, ""));
+				// now return the STS token for the given user
+				returnToken(RequestType.STS_TOKEN, idAndAccessToken, req, resp);
+			} else {
+				// this is the initial redirect to go log in with Synapse
+				String redirectBackUrl = getRedirectBackUrlSynapse(req);
+				String state = getRequestTypeFromUri(uri).name();
+				String redirectUrl = new OAuth2Api(getAuthorizeUrl(state), TOKEN_URL).
+						getAuthorizationUrl(new OAuthConfig(getClientIdSynapse(), null, redirectBackUrl, null, "openid", null));
+				resp.setHeader(LOCATION, redirectUrl);
+				resp.setStatus(303);
+			}
+		} else if (REDIRECT_URI.equals(uri)) {
 			// this is the second step, after logging in to Synapse
-			String state = req.getParameter(STATE);
+			RequestType requestType = RequestType.valueOf(req.getParameter(STATE));
 			String authorizationCode = req.getParameter("code");
 			IdAndAccessToken tokens = null;
 			
@@ -594,58 +682,11 @@ public class Auth extends HttpServlet {
 				return;
 			}
 			
-			// parse ID Token
-			Claims claims = jwtClaimsExtractor.extractClaims(tokens.getIdToken().getToken());
-			List<String> teamIds = claims.get(TEAM_CLAIM_NAME, List.class);
+			returnToken(requestType, tokens, req, resp);
 			
-			String selectedTeam = null;
-			String roleArn = null;
-			for (String teamId : teamToRoleMap.keySet()) {
-				if (teamIds.contains(teamId)) {
-					selectedTeam = teamId;
-					roleArn = teamToRoleMap.get(teamId);
-					break;
-				}
-			}
-
-			if (roleArn==null) {
-				resp.setContentType("text/html");
-				try (ServletOutputStream os=resp.getOutputStream()) {
-					os.println("<html><head/><body>");
-					os.println("<h3>To proceed you must be a member of one of these Synapse teams:</h3>");
-					os.println("<ul>");
-					for (String teamId : teamToRoleMap.keySet()) {
-						os.println(String.format("<li><a href=\"https://www.synapse.org/#!Team:%1$s\">https://www.synapse.org/#!Team:%1$s</a></li>", teamId));
-					}
-					os.println("</ul>");
-					os.println("</body></html>");
-				}
-				resp.setStatus(200);
-				return;
-			}
-			
-			// we take different actions for different services
-			switch(RequestType.valueOf(state)) {
-			case SC_CONSOLE:
-				redirectToSCConsole(claims, roleArn, selectedTeam, req, resp);
-				break;
-			case STS_TOKEN:
-				returnStsToken(claims, roleArn, selectedTeam, resp);
-				break;
-			case ID_TOKEN:
-				// creates file for use here: https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-role.html#cli-configure-role-oidc
-				returnOidcToken(tokens.getIdToken().getToken(), resp);
-				break;
-			case ACCESS_TOKEN:
-				returnOidcToken(tokens.getAccessToken().getToken(), resp);
-				break;
-			default:
-				throw new IllegalStateException("Unrecognized request type: "+state);
-			}
-
-		} else if (uri.equals(HEALTH_URI)) {
+		} else if (HEALTH_URI.equals(uri)) {
 			resp.setStatus(200);
-		} else if (uri.equals(ABOUT_URI)) {
+		} else if (ABOUT_URI.equals(uri)) {
 			// Currently returns version
 			resp.setContentType("application/json");
 			resp.setCharacterEncoding(UTF8);
@@ -655,7 +696,7 @@ public class Auth extends HttpServlet {
 			PrintWriter out = resp.getWriter();
 			out.print(o.toString());
 			out.flush();
-		} else if (uri.equals(SECTOR_IDENTIFIER_URI)) {
+		} else if (SECTOR_IDENTIFIER_URI.equals(uri)) {
 			// returns a JSONArray containing all the redirect URIs under the sector identifier
 			resp.setContentType("application/json");
 			resp.setCharacterEncoding(UTF8);
@@ -667,7 +708,7 @@ public class Auth extends HttpServlet {
 			PrintWriter out = resp.getWriter();
 			out.print(o.toString());
 			out.flush();
-		} else {
+		} else { // we redirect unrecognized URIs back to the main login URL
 			resp.setHeader(LOCATION, getThisEndpoint(req));
 			resp.setStatus(303);
 		}

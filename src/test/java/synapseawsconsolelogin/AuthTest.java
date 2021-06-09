@@ -7,6 +7,7 @@ import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.Matchers.any;
 import static org.mockito.Matchers.anyString;
+import static org.mockito.Matchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -259,7 +260,7 @@ public class AuthTest {
 
 	@Test
 	public void testGetConsoleLoginURL() throws Exception {
-		when(mockHttpGetExecutor.executeHttpGet(anyString())).thenReturn("{\"SigninToken\":\"token\"}");
+		when(mockHttpGetExecutor.executeHttpGet(anyString(), eq((String)null))).thenReturn("{\"SigninToken\":\"token\"}");
 		
 		Credentials credentials = new Credentials();
 		credentials.setAccessKeyId("keyId");
@@ -274,16 +275,16 @@ public class AuthTest {
 	
 	@Test
 	public void testIsEntrypointUri() {
-		assertTrue(Auth.isEntrypointUri(null));
-		assertTrue(Auth.isEntrypointUri(""));
-		assertTrue(Auth.isEntrypointUri("/"));
-		assertTrue(Auth.isEntrypointUri("/ststoken"));
-		assertTrue(Auth.isEntrypointUri("/accesstoken"));
-		assertTrue(Auth.isEntrypointUri("/idtoken"));
+		assertTrue(Auth.isOAuthEntrypointUri(null));
+		assertTrue(Auth.isOAuthEntrypointUri(""));
+		assertTrue(Auth.isOAuthEntrypointUri("/"));
+		assertTrue(Auth.isOAuthEntrypointUri("/ststoken"));
+		assertTrue(Auth.isOAuthEntrypointUri("/accesstoken"));
+		assertTrue(Auth.isOAuthEntrypointUri("/idtoken"));
 		
-		assertFalse(Auth.isEntrypointUri("/synapse"));
-		assertFalse(Auth.isEntrypointUri("/about"));
-		assertFalse(Auth.isEntrypointUri("/random"));
+		assertFalse(Auth.isOAuthEntrypointUri("/synapse"));
+		assertFalse(Auth.isOAuthEntrypointUri("/about"));
+		assertFalse(Auth.isOAuthEntrypointUri("/random"));
 	}
 	
 	@Test
@@ -375,7 +376,7 @@ public class AuthTest {
 		
 		Claims claims = new DefaultClaims();
 
-		when(mockHttpGetExecutor.executeHttpGet(anyString())).thenReturn("{\"SigninToken\":\"token\"}");
+		when(mockHttpGetExecutor.executeHttpGet(anyString(), eq((String)null))).thenReturn("{\"SigninToken\":\"token\"}");
 		
 		// method under test
 		auth.redirectToSCConsole(claims, roleArn, selectedTeam, mockHttpRequest, mockHttpResponse);
@@ -480,7 +481,7 @@ public class AuthTest {
 		when(mockHttpRequest.getParameter("code")).thenReturn("some-code");
 		when(mockHttpRequest.getParameter("state")).thenReturn(RequestType.SC_CONSOLE.name());
 
-		when(mockHttpGetExecutor.executeHttpGet(anyString())).thenReturn("{\"SigninToken\":\"token\"}");
+		when(mockHttpGetExecutor.executeHttpGet(anyString(), eq((String)null))).thenReturn("{\"SigninToken\":\"token\"}");
 
 		// method under test
 		auth.doGet(mockHttpRequest, mockHttpResponse);
@@ -531,6 +532,23 @@ public class AuthTest {
 		
 		verify(mockHttpResponse).setHeader("Content-Disposition","attachment; filename=\"synapse_oidc_token\"");
 		byte[] expectedBytes = ACCESS_TOKEN.getBytes(Charset.forName("UTF8"));
+		verify(mockPrintWriter).print(expectedBytes);
+		verify(mockHttpResponse).setContentLength(expectedBytes.length);		
+	}
+	
+	@Test
+	public void testDoGet_DownloadSTSTokenViaWebServiceRequest() throws Exception {
+		mockIncomingUrl("https://www.foo.com", "/ststoken");
+		when(mockHttpRequest.getHeader("Authorization")).thenReturn("Bearer access-token");
+		when(mockHttpGetExecutor.executeHttpGet("https://repo-prod.prod.sagebase.org/auth/v1/oauth2/userinfo",
+				"access-token")).thenReturn(ID_TOKEN);
+		
+		// method under test
+		auth.doGet(mockHttpRequest, mockHttpResponse);
+		
+		verify(mockHttpResponse).setHeader("Content-Disposition","attachment; filename=\"config\"");
+		String expectedContent = "[default]\nAccessKeyId = accessKeyId\nSecretAccessKey = secretAccessKey\nSessionToken = sessionToken";
+		byte[] expectedBytes = expectedContent.getBytes(Charset.forName("UTF8"));
 		verify(mockPrintWriter).print(expectedBytes);
 		verify(mockHttpResponse).setContentLength(expectedBytes.length);		
 	}
