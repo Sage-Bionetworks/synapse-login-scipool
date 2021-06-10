@@ -13,11 +13,14 @@ import static org.mockito.Mockito.when;
 
 import java.io.PrintWriter;
 import java.nio.charset.Charset;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TimeZone;
 import java.util.UUID;
 
 import javax.servlet.ServletOutputStream;
@@ -95,6 +98,8 @@ public class AuthTest {
 	private static final String ID_TOKEN = "id-token";
 	private static final String ACCESS_TOKEN = "access-token";
 	
+	private static final String STS_EXPIRES_ON = "2021-10-21T12:59:59Z";
+	
 	private Claims claims;
 
 	private void mockIncomingUrl(String host, String uri) {
@@ -130,6 +135,10 @@ public class AuthTest {
 		credentials.setAccessKeyId("accessKeyId");
 		credentials.setSecretAccessKey("secretAccessKey");
 		credentials.setSessionToken("sessionToken");
+		DateFormat df = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'");
+		TimeZone tz = TimeZone.getTimeZone("UTC");
+		df.setTimeZone(tz);
+		credentials.setExpiration(df.parse(STS_EXPIRES_ON));
 		assumeRoleResult.setCredentials(credentials);
 		when(mockStsClient.assumeRole(any())).thenReturn(assumeRoleResult);
 		
@@ -398,14 +407,13 @@ public class AuthTest {
 		byte[] expectedBytes = expectedContent.getBytes(Charset.forName("UTF8"));
 		
 		// method under test
-		Auth.writeFileToResponse(expectedContent, "text/plain", "file.txt", mockHttpResponse);
+		Auth.writeFileToResponse(expectedContent, "file.txt", mockHttpResponse);
 		
 		verify(mockHttpResponse).setStatus(200);
 		verify(mockHttpResponse).setContentType("application/force-download");
 		verify(mockHttpResponse).setCharacterEncoding("utf-8");
 		verify(mockHttpResponse).setHeader("Content-Transfer-Encoding", "binary");
 		verify(mockHttpResponse).setHeader("Cache-Control", "no-store, no-cache");
-		verify(mockHttpResponse).setHeader("Content-Type", "text/plain; charset=utf-8");
 		verify(mockHttpResponse).setHeader("Content-Disposition","attachment; filename=\"file.txt\"");
 		verify(mockPrintWriter).print(expectedBytes);
 		verify(mockHttpResponse).setContentLength(expectedBytes.length);		
@@ -430,6 +438,9 @@ public class AuthTest {
 		assertEquals("accessKeyId", actual.getString("AccessKeyId"));
 		assertEquals("secretAccessKey", actual.getString("SecretAccessKey"));
 		assertEquals("sessionToken", actual.getString("SessionToken"));
+		assertEquals(1, actual.getInt("Version"));
+		assertEquals(STS_EXPIRES_ON, actual.getString("Expiration"));
+		
 		verify(mockHttpResponse).setContentLength(byteArrayCaptor.getValue().length);		
 	}
 	

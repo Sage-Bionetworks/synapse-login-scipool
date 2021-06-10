@@ -11,17 +11,20 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLConnection;
 import java.net.URLEncoder;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Map.Entry;
 import java.util.Properties;
 import java.util.Set;
+import java.util.TimeZone;
 import java.util.TreeSet;
 import java.util.UUID;
 import java.util.logging.Level;
@@ -132,6 +135,8 @@ public class Auth extends HttpServlet {
 	public static final String GIT_COMMIT_TIME_KEY = "git.commit.time";
 	
 	private static final String NONCE_TAG_NAME = "nonce";
+	
+	private static final String ISO_8601_DATE_FORMAT = "yyyy-MM-dd'T'HH:mm:ss'Z'";
 	
 	/*
 	 * File name for the AWS config file containing the downloaded STS token
@@ -503,6 +508,13 @@ public class Auth extends HttpServlet {
 		resp.setStatus(303);		
 	}
 	
+	String formatDateAsIso8601(Date date) {
+		DateFormat dateFormat = new SimpleDateFormat(ISO_8601_DATE_FORMAT);
+		TimeZone tz = TimeZone.getTimeZone("UTC");
+		dateFormat.setTimeZone(tz);
+		return dateFormat.format(date);
+	}
+
 	/**
 	 * Create the HTTP response to download a file containing the STS token
 	 * which will allow the bearer to assume the end-user role. The file is
@@ -523,8 +535,10 @@ public class Auth extends HttpServlet {
 		sts.put("AccessKeyId", credentials.getAccessKeyId());
 		sts.put("SecretAccessKey", credentials.getSecretAccessKey());
 		sts.put("SessionToken", credentials.getSessionToken());
+		sts.put("Expiration", formatDateAsIso8601(credentials.getExpiration()));
+		sts.put("Version", "1");
 		
-		writeFileToResponse(createSerializedJSON(sts), "application/json", STS_TOKEN_FILE_NAME, resp);
+		writeFileToResponse(createSerializedJSON(sts), STS_TOKEN_FILE_NAME, resp);
 	}
 	
 	/**
@@ -548,13 +562,12 @@ public class Auth extends HttpServlet {
 	 * @param resp the HTTP response to write the result to
 	 * @throws IOException
 	 */
-	public static void writeFileToResponse(String content, String contentType, String filename, HttpServletResponse resp) throws IOException {
+	public static void writeFileToResponse(String content, String filename, HttpServletResponse resp) throws IOException {
 		resp.setStatus(200);		
 		resp.setContentType("application/force-download");
 		resp.setCharacterEncoding(UTF8);
 		resp.setHeader("Content-Transfer-Encoding", "binary");
 		resp.setHeader("Cache-Control", "no-store, no-cache");
-		resp.setHeader("Content-Type", contentType+"; charset="+UTF8);
 		resp.setHeader("Content-Disposition","attachment; filename=\""+filename+"\"");
 		byte[] bytes = content.getBytes(UTF8);
 		resp.setContentLength(bytes.length);
@@ -566,6 +579,11 @@ public class Auth extends HttpServlet {
 	
 	private static final String BEARER_PREFIX = "Bearer ";
 	
+	/**
+	 * Extract the bearer authorization token from an HTTP request
+	 * @param req
+	 * @return the authorization token, or null if none is present
+	 */
 	static String getBearerAuthorizationToken(HttpServletRequest req) {
 		String authHeader = req.getHeader("Authorization");
 		if (StringUtils.isEmpty(authHeader)) {
@@ -584,7 +602,7 @@ public class Auth extends HttpServlet {
 	 * @throws IOException
 	 */
 	void returnOidcToken(String token, HttpServletResponse resp) throws IOException {
-		writeFileToResponse(token, "text/plain", OIDC_TOKEN_FILE_NAME, resp);
+		writeFileToResponse(token, OIDC_TOKEN_FILE_NAME, resp);
 	}
 	
 	private void returnToken(RequestType requestType, IdAndAccessToken idAndAccessTokens, HttpServletRequest req, HttpServletResponse resp) throws IOException {
