@@ -105,7 +105,7 @@ public class Auth extends HttpServlet {
 
 	private static final String STATE = "state";
 	private static final String LOCATION = "Location";
-	private static final String UTF8 = "UTF-8";
+	private static final String UTF8 = "utf-8";
 
 	private static final String AWS_CONSOLE_URL_TEMPLATE = "https://%1$s.console.aws.amazon.com/servicecatalog/home?region=%1$s#/products";
 	private static final String AWS_SIGN_IN_URL = "https://signin.aws.amazon.com/federation";
@@ -519,28 +519,25 @@ public class Auth extends HttpServlet {
 		
 		AssumeRoleResult assumeRoleResult = stsClient.assumeRole(assumeRoleRequest);
 		Credentials credentials = assumeRoleResult.getCredentials();
-		Map<String,String> sts = new LinkedHashMap<String,String>();
+		Map<String,String> sts = new HashMap<String,String>();
 		sts.put("AccessKeyId", credentials.getAccessKeyId());
 		sts.put("SecretAccessKey", credentials.getSecretAccessKey());
 		sts.put("SessionToken", credentials.getSessionToken());
 		
-		writeFileToResponse(createAWSCliProfile(sts), STS_TOKEN_FILE_NAME, resp);
+		writeFileToResponse(createSerializedJSON(sts), "application/json", STS_TOKEN_FILE_NAME, resp);
 	}
 	
 	/**
-	 * Create the AWS CLI config file content for a Map of key-value pairs
+	 * Create serialized JSON for the given map of key/value pairs
 	 * @param content
 	 * @return
 	 */
-	public static String createAWSCliProfile(Map<String,String> content) {
-		StringBuilder sb = new StringBuilder("[default]");
-		for (Entry<String,String> entry: content.entrySet()) {
-			sb.append("\n");
-			sb.append(entry.getKey());
-			sb.append(" = ");
-			sb.append(entry.getValue());
+	public static String createSerializedJSON(Map<String,String> content) {
+		JSONObject o = new JSONObject();
+		for (Map.Entry<String,String> entry : content.entrySet()) {
+			o.put(entry.getKey(), entry.getValue());
 		}
-		return sb.toString();
+		return o.toString();
 	}
 	
 	/**
@@ -551,12 +548,13 @@ public class Auth extends HttpServlet {
 	 * @param resp the HTTP response to write the result to
 	 * @throws IOException
 	 */
-	public static void writeFileToResponse(String content, String filename, HttpServletResponse resp) throws IOException {
+	public static void writeFileToResponse(String content, String contentType, String filename, HttpServletResponse resp) throws IOException {
 		resp.setStatus(200);		
 		resp.setContentType("application/force-download");
 		resp.setCharacterEncoding(UTF8);
 		resp.setHeader("Content-Transfer-Encoding", "binary");
 		resp.setHeader("Cache-Control", "no-store, no-cache");
+		resp.setHeader("Content-Type", contentType+"; charset="+UTF8);
 		resp.setHeader("Content-Disposition","attachment; filename=\""+filename+"\"");
 		byte[] bytes = content.getBytes(UTF8);
 		resp.setContentLength(bytes.length);
@@ -586,7 +584,7 @@ public class Auth extends HttpServlet {
 	 * @throws IOException
 	 */
 	void returnOidcToken(String token, HttpServletResponse resp) throws IOException {
-		writeFileToResponse(token, OIDC_TOKEN_FILE_NAME, resp);
+		writeFileToResponse(token, "text/plain", OIDC_TOKEN_FILE_NAME, resp);
 	}
 	
 	private void returnToken(RequestType requestType, IdAndAccessToken idAndAccessTokens, HttpServletRequest req, HttpServletResponse resp) throws IOException {

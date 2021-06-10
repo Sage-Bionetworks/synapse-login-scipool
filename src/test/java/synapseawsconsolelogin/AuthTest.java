@@ -25,11 +25,14 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
 import org.apache.commons.lang.StringUtils;
+import org.json.JSONObject;
 import org.junit.After;
 import org.junit.Assume;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Captor;
 import org.mockito.Mock;
 import org.mockito.runners.MockitoJUnitRunner;
 import org.scribe.model.Token;
@@ -80,6 +83,9 @@ public class AuthTest {
 	
 	@Mock
 	private ServletOutputStream mockOutputStream;
+	
+	@Captor
+	private ArgumentCaptor<byte[]> byteArrayCaptor;
 	
 	private static final String SC_CONSOLE_LOGIN_URL = "https://signin.aws.amazon.com/federation?Action=login&SigninToken=token"+
 			 "&Issuer=https%3A%2F%2Fwww.foo.com&Destination=https%3A%2F%2Fus-east-1.console.aws.amazon.com%2Fservicecatalog%2Fhome%3Fregion%3Dus-east-1%23%2Fproducts";
@@ -392,13 +398,14 @@ public class AuthTest {
 		byte[] expectedBytes = expectedContent.getBytes(Charset.forName("UTF8"));
 		
 		// method under test
-		Auth.writeFileToResponse(expectedContent, "file.txt", mockHttpResponse);
+		Auth.writeFileToResponse(expectedContent, "text/plain", "file.txt", mockHttpResponse);
 		
 		verify(mockHttpResponse).setStatus(200);
 		verify(mockHttpResponse).setContentType("application/force-download");
-		verify(mockHttpResponse).setCharacterEncoding("UTF-8");
+		verify(mockHttpResponse).setCharacterEncoding("utf-8");
 		verify(mockHttpResponse).setHeader("Content-Transfer-Encoding", "binary");
 		verify(mockHttpResponse).setHeader("Cache-Control", "no-store, no-cache");
+		verify(mockHttpResponse).setHeader("Content-Type", "text/plain; charset=utf-8");
 		verify(mockHttpResponse).setHeader("Content-Disposition","attachment; filename=\"file.txt\"");
 		verify(mockPrintWriter).print(expectedBytes);
 		verify(mockHttpResponse).setContentLength(expectedBytes.length);		
@@ -414,26 +421,27 @@ public class AuthTest {
 		
 		Claims claims = new DefaultClaims();
 		
-		String expectedContent = "[default]\nAccessKeyId = accessKeyId\nSecretAccessKey = secretAccessKey\nSessionToken = sessionToken";
-		byte[] expectedBytes = expectedContent.getBytes(Charset.forName("UTF8"));
-		
 		// method under test
 		auth.returnStsToken(claims, roleArn, selectedTeam, mockHttpResponse);
 		
 		verify(mockHttpResponse).setHeader("Content-Disposition","attachment; filename=\"config\"");
-		verify(mockPrintWriter).print(expectedBytes);
-		verify(mockHttpResponse).setContentLength(expectedBytes.length);		
+		verify(mockPrintWriter).print(byteArrayCaptor.capture());
+		JSONObject actual = new JSONObject(new String(byteArrayCaptor.getValue(),Charset.forName("UTF8")));
+		assertEquals("accessKeyId", actual.getString("AccessKeyId"));
+		assertEquals("secretAccessKey", actual.getString("SecretAccessKey"));
+		assertEquals("sessionToken", actual.getString("SessionToken"));
+		verify(mockHttpResponse).setContentLength(byteArrayCaptor.getValue().length);		
 	}
 	
 	@Test
-	public void testCreateCLIProfile() throws Exception {
+	public void testCreateJSONfile() throws Exception {
 		Map<String,String> content = new LinkedHashMap<String,String>();
 		content.put("key1", "foo");
 		content.put("key2", "bar");
-		String expectedProfile = "[default]\nkey1 = foo\nkey2 = bar";
+		String expectedJson = "{\"key1\":\"foo\",\"key2\":\"bar\"}";
 		
 		// method under test
-		assertEquals(expectedProfile, Auth.createAWSCliProfile(content));
+		assertEquals(expectedJson, Auth.createSerializedJSON(content));
 	}
 	
 	@Test
@@ -500,10 +508,12 @@ public class AuthTest {
 		auth.doGet(mockHttpRequest, mockHttpResponse);
 		
 		verify(mockHttpResponse).setHeader("Content-Disposition","attachment; filename=\"config\"");
-		String expectedContent = "[default]\nAccessKeyId = accessKeyId\nSecretAccessKey = secretAccessKey\nSessionToken = sessionToken";
-		byte[] expectedBytes = expectedContent.getBytes(Charset.forName("UTF8"));
-		verify(mockPrintWriter).print(expectedBytes);
-		verify(mockHttpResponse).setContentLength(expectedBytes.length);		
+		verify(mockPrintWriter).print(byteArrayCaptor.capture());
+		JSONObject actual = new JSONObject(new String(byteArrayCaptor.getValue(),Charset.forName("UTF8")));
+		assertEquals("accessKeyId", actual.getString("AccessKeyId"));
+		assertEquals("secretAccessKey", actual.getString("SecretAccessKey"));
+		assertEquals("sessionToken", actual.getString("SessionToken"));
+		verify(mockHttpResponse).setContentLength(byteArrayCaptor.getValue().length);		
 	}
 	
 	@Test
@@ -547,10 +557,12 @@ public class AuthTest {
 		auth.doGet(mockHttpRequest, mockHttpResponse);
 		
 		verify(mockHttpResponse).setHeader("Content-Disposition","attachment; filename=\"config\"");
-		String expectedContent = "[default]\nAccessKeyId = accessKeyId\nSecretAccessKey = secretAccessKey\nSessionToken = sessionToken";
-		byte[] expectedBytes = expectedContent.getBytes(Charset.forName("UTF8"));
-		verify(mockPrintWriter).print(expectedBytes);
-		verify(mockHttpResponse).setContentLength(expectedBytes.length);		
+		verify(mockPrintWriter).print(byteArrayCaptor.capture());
+		JSONObject actual = new JSONObject(new String(byteArrayCaptor.getValue(),Charset.forName("UTF8")));
+		assertEquals("accessKeyId", actual.getString("AccessKeyId"));
+		assertEquals("secretAccessKey", actual.getString("SecretAccessKey"));
+		assertEquals("sessionToken", actual.getString("SessionToken"));
+		verify(mockHttpResponse).setContentLength(byteArrayCaptor.getValue().length);		
 	}
 	
 	@Test
