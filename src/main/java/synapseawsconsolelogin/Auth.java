@@ -11,9 +11,12 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLConnection;
 import java.net.URLEncoder;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -21,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import java.util.TimeZone;
 import java.util.TreeSet;
 import java.util.UUID;
 import java.util.logging.Level;
@@ -67,14 +71,44 @@ public class Auth extends HttpServlet {
 	private static final String TEAM_CLAIM_NAME = "team";
 	private static final String CLAIMS_TEMPLATE = "{\"team\":{\"values\":[\"%1$s\"]},%2$s}";
 	private static final String CLAIM_TEMPLATE="\"%1$s\":{\"essential\":true}";
-	private static final String TOKEN_URL = "https://repo-prod.prod.sagebase.org/auth/v1/oauth2/token";
+	private static final String SYNAPSE_ENDPOINT = "https://repo-prod.prod.sagebase.org/auth/v1";
+	private static final String TOKEN_URL = SYNAPSE_ENDPOINT+"/oauth2/token";
+	private static final String USER_INFO_URL = SYNAPSE_ENDPOINT+"/oauth2/userinfo";
+	
+	/*
+	 * The default endpoint is the empty string or null, which 
+	 * logs the user in to Service Catalog.
+	 * The following are the supported alternate endpoints.
+	 */
+	private static final String STS_TOKEN_URI = "/ststoken"; // download STS token for the role indicated by the TEAM_TO_ROLE_ARN_MAP
+	private static final String ACCESS_TOKEN_URI = "/accesstoken"; // download the OIDC access token returned by Synapse
+	private static final String ID_TOKEN_URI = "/idtoken"; // download the OIDC ID token returned by Synapse
+
+	/*
+	 * This is the endpoint that Synapse redirects back to after logging the user in.
+	 */
 	private static final String REDIRECT_URI = "/synapse";
+	
+	/*
+	 * This is the URI that AWS uses to check the system's health
+	 */
 	private static final String HEALTH_URI = "/health";
+	
+	/*
+	 * This is the URI that returns the application's version
+	 */
 	public static final String ABOUT_URI = "/about";
+	
+	
+	/*
+	 * This is the URI that returns the 'sector identifier' information.  
+	 * For details, see https://openid.net/specs/openid-connect-core-1_0.html#PairwiseAlg
+	 */
 	public static final String SECTOR_IDENTIFIER_URI  = "/redirect_uris.json";
 
+	private static final String STATE = "state";
 	private static final String LOCATION = "Location";
-	private static final String UTF8 = "UTF-8";
+	private static final String UTF8 = "utf-8";
 
 	private static final String AWS_CONSOLE_URL_TEMPLATE = "https://%1$s.console.aws.amazon.com/servicecatalog/home?region=%1$s#/products";
 	private static final String AWS_SIGN_IN_URL = "https://signin.aws.amazon.com/federation";
@@ -101,15 +135,29 @@ public class Auth extends HttpServlet {
 	public static final String GIT_COMMIT_TIME_KEY = "git.commit.time";
 	
 	private static final String NONCE_TAG_NAME = "nonce";
-
+	
+	private static final String ISO_8601_DATE_FORMAT = "yyyy-MM-dd'T'HH:mm:ss'Z'";
+	
+	/*
+	 * File name for the AWS config file containing the downloaded STS token
+	 */
+	private static final String STS_TOKEN_FILE_NAME = "ststoken.json";
+	
+	/*
+	 * File name for the downloaded OIDC (ID or access) token
+	 */
+	private static final String OIDC_TOKEN_FILE_NAME = "synapse_oidc_token";
 
 	private Map<String,String> teamToRoleMap;
 	private String sessionTimeoutSeconds;
-	private String awsRegion;
 	private Properties properties = null;
 	private Properties ssmParameterCache = null;
 	private String awsConsoleUrl;
 	private String appVersion = null;
+	private AWSSecurityTokenService stsClient = null;
+	private HttpGetExecutor httpGetExecutor	= null;
+	private TokenRetriever tokenRetriever = null;
+	private JWTClaimsExtractor jwtClaimsExtractor = null;
 	
 	Map<String,String> getTeamToRoleMap() throws JSONException {
 		String jsonString = getProperty(TEAM_TO_ROLE_ARN_MAP_PARAMETER);
@@ -127,7 +175,14 @@ public class Auth extends HttpServlet {
 		return result;
 	}
 
-	public Auth() {
+	private void init(AWSSecurityTokenService stsClient, 
+			HttpGetExecutor httpGetExecutor, 
+			TokenRetriever tokenRetriever,
+			JWTClaimsExtractor jwtClaimsExtractor) {
+		this.stsClient = stsClient;
+		this.httpGetExecutor = httpGetExecutor;
+		this.tokenRetriever = tokenRetriever;
+		this.jwtClaimsExtractor = jwtClaimsExtractor;
 		initProperties();
 		appVersion = initAppVersion();
 		ssmParameterCache = new Properties();
@@ -138,9 +193,60 @@ public class Auth extends HttpServlet {
 			sessionTimeoutSeconds = sessionTimeoutSecondsString;
 		}
 		teamToRoleMap = getTeamToRoleMap();
-		awsRegion = getProperty(AWS_REGION_PARAMETER);
+		String awsRegion = getProperty(AWS_REGION_PARAMETER);
 		awsConsoleUrl = String.format(AWS_CONSOLE_URL_TEMPLATE, awsRegion);
 	}
+	
+	/*
+	 * For testing
+	 */
+	public Auth(AWSSecurityTokenService stsClient, 
+			HttpGetExecutor httpGetExecutor, 
+			TokenRetriever tokenRetriever,
+			JWTClaimsExtractor jwtClaimsExtractor) {
+		init(stsClient, httpGetExecutor, tokenRetriever, jwtClaimsExtractor);
+	}
+		
+	public Auth() {
+		String awsRegion = getProperty(AWS_REGION_PARAMETER);
+		AWSSecurityTokenService stsClient = AWSSecurityTokenServiceClientBuilder.standard()
+				.withRegion(Regions.fromName(awsRegion)).build();
+		
+		HttpGetExecutor httpExecutor = new HttpGetExecutor() {
+			@Override
+			public String executeHttpGet(String urlString, String accessToken) throws IOException {
+				URL url = new URL(urlString);
+				URLConnection conn = url.openConnection();
+				if (StringUtils.isNotEmpty(accessToken)) {
+					conn.setRequestProperty("Authorization", BEARER_PREFIX+accessToken);
+				}
+				BufferedReader bufferReader = new BufferedReader(
+						new InputStreamReader(conn.getInputStream()));  
+				return bufferReader.readLine();
+			}
+		};
+		
+		TokenRetriever tokenRetriever = new TokenRetriever() {
+			@Override
+			public IdAndAccessToken getTokens(String redirectUrl, String authorizationCode) {
+				OAuth2Api.BasicOAuth2Service service = (OAuth2Api.BasicOAuth2Service)(new OAuth2Api(null, TOKEN_URL)).
+						createService(new OAuthConfig(getClientIdSynapse(), getClientSecretSynapse(), redirectUrl, null, null, null));
+				return service.getIdAndAccessTokens(null, new Verifier(authorizationCode));
+			}
+			
+		};
+		
+		JWTClaimsExtractor jwtClaimsExtractor = new JWTClaimsExtractor() {
+			@Override
+			public Claims extractClaims(String jwtString) {
+				Jwt<Header,Claims> jwt = parseJWT(jwtString);
+				return jwt.getBody();
+			}
+		};
+
+		init(stsClient, httpExecutor, tokenRetriever, jwtClaimsExtractor);
+	}
+
 	
 	public List<String> getCommaSeparatedPropertyAsList(String propertyName, String defaultValue) {
 		String propertyValue = getProperty(propertyName, false);
@@ -160,7 +266,14 @@ public class Auth extends HttpServlet {
 		return getCommaSeparatedPropertyAsList(REDIRECT_URIS_PROPERTY_NAME, defaultRedirectURI);
 	}
 
-	public String getAuthorizeUrl() {
+	/**
+	 * 
+	 * @param state the state to be carried through authentication and returned to this 
+	 * server when Synapse is done authenticating the user.  If null then no 'state' request
+	 * parameter will be included in the request
+	 * @return the URL that the browser should be redirect to in order to authenticate with Synapse
+	 */
+	public String getAuthorizeUrl(String state) {
 		Set<String> allClaims = new TreeSet<String>(getSessionClaimNames());
 		allClaims.addAll(getTagClaimNames());
 		StringBuilder sb = new StringBuilder();
@@ -171,8 +284,12 @@ public class Auth extends HttpServlet {
 			sb.append(String.format(CLAIM_TEMPLATE, claimName));
 		}
 		String claims = String.format(CLAIMS_TEMPLATE, StringUtils.join(teamToRoleMap.keySet(), "\",\""), sb.toString());
-		return "https://signin.synapse.org?response_type=code&client_id=%s&redirect_uri=%s&"+
+		String result = "https://signin.synapse.org?response_type=code&client_id=%s&redirect_uri=%s&"+
 		"claims={\"id_token\":"+claims+",\"userinfo\":"+claims+"}";
+		if (StringUtils.isNotEmpty(state)) {
+			result += "&"+STATE+"="+state;
+		}
+		return result;
 	}
 	
 	@Override
@@ -222,7 +339,7 @@ public class Auth extends HttpServlet {
 	}
 	
 	// from https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_enable-console-custom-url.html#STSConsoleLink_programJava
-	String getConsoleLoginURL(HttpServletRequest req, Credentials federatedCredentials, HttpGetExecutor httpGetExecutor) throws IOException {
+	String getConsoleLoginURL(HttpServletRequest req, Credentials federatedCredentials) throws IOException {
 
 		String issuerURL = getThisEndpoint(req);
 
@@ -247,7 +364,7 @@ public class Auth extends HttpServlet {
 		String getSigninTokenURL = String.format(SIGNIN_TOKEN_URL_TEMPLATE, 
 				sessionTimeoutSeconds, URLEncoder.encode(sessionJson,UTF8));
 
-		String returnContent = httpGetExecutor.executeHttpGet(getSigninTokenURL);
+		String returnContent = this.httpGetExecutor.executeHttpGet(getSigninTokenURL, null);
 
 		String signinToken = new JSONObject(returnContent).getString("SigninToken");
 
@@ -261,7 +378,7 @@ public class Auth extends HttpServlet {
 		// Finally, present the completed URL for the AWS console session to the user
 		String loginURL = AWS_SIGN_IN_URL + "?Action=login" +
 				signinTokenParameter + issuerParameter +
-				"&Destination=" + URLEncoder.encode(awsConsoleUrl,UTF8);
+				"&Destination=" + URLEncoder.encode(awsConsoleUrl, UTF8);
 		
 		return loginURL;
 	}
@@ -333,88 +450,259 @@ public class Auth extends HttpServlet {
 			os.println("</body></html>");
 		}
 	}
+	
+	/**
+	 * Determines whether the URI is one of the entrypoints to this application
+	 * @param uri The URI (omitting the scheme, host and optional port)
+	 * @return true if and only if the uri is one of the expected entrypoints
+	 */
+	static boolean isOAuthEntrypointUri(String uri) {
+		return "/".equals(uri) || // note: The default entrypoint is the empty string
+				StringUtils.isEmpty(uri) ||
+				STS_TOKEN_URI.equals(uri) ||
+				ID_TOKEN_URI.equals(uri) ||
+				ACCESS_TOKEN_URI.equals(uri);
+	}
+	
+	/**
+	 * Maps the entrypoint URI to one of an enumeration of requests
+	 * (redirect to Service Catalog, download an STS file, download a token, etc.)
+	 * 
+	 * @param uri the entrypoint URI
+	 * @return the mapped ENUM
+	 */
+	static RequestType getRequestTypeFromUri(String uri) {
+		if (StringUtils.isEmpty(uri) || "/".equals(uri)) {
+			return RequestType.SC_CONSOLE;
+		}
+		if (STS_TOKEN_URI.equals(uri)) {
+			return RequestType.STS_TOKEN;
+		}
+		if (ID_TOKEN_URI.equals(uri)) {
+			return RequestType.ID_TOKEN;
+		}
+		if (ACCESS_TOKEN_URI.equals(uri)) {
+			return RequestType.ACCESS_TOKEN;
+		}
+		throw new IllegalArgumentException("Unrecognized uri: "+uri);
+	}
+	
+	/**
+	 * Construct the HTTP redirect response that sends the browser to the Service Catalog console
+	 * @param claims
+	 * @param roleArn
+	 * @param selectedTeam
+	 * @param req
+	 * @param resp
+	 * @throws IOException
+	 */
+	void redirectToSCConsole(Claims claims, String roleArn, String selectedTeam, HttpServletRequest req, HttpServletResponse resp) throws IOException {
+		AssumeRoleRequest assumeRoleRequest = createAssumeRoleRequest(claims, roleArn, selectedTeam);
+		
+		AssumeRoleResult assumeRoleResult = stsClient.assumeRole(assumeRoleRequest);
+		Credentials credentials = assumeRoleResult.getCredentials();
+		// redirect to AWS login
+		String redirectURL = getConsoleLoginURL(req, credentials);
+		
+		resp.setHeader(LOCATION, redirectURL);
+		resp.setStatus(303);		
+	}
+	
+	String formatDateAsIso8601(Date date) {
+		DateFormat dateFormat = new SimpleDateFormat(ISO_8601_DATE_FORMAT);
+		TimeZone tz = TimeZone.getTimeZone("UTC");
+		dateFormat.setTimeZone(tz);
+		return dateFormat.format(date);
+	}
+
+	/**
+	 * Create the HTTP response to download a file containing the STS token
+	 * which will allow the bearer to assume the end-user role. The file is
+	 * in the format of an AWS CLI config file.
+	 * 
+	 * @param claims
+	 * @param roleArn
+	 * @param selectedTeam
+	 * @param resp
+	 * @throws IOException
+	 */
+	void returnStsToken(Claims claims, String roleArn, String selectedTeam, HttpServletResponse resp) throws IOException {
+		AssumeRoleRequest assumeRoleRequest = createAssumeRoleRequest(claims, roleArn, selectedTeam);
+		
+		AssumeRoleResult assumeRoleResult = stsClient.assumeRole(assumeRoleRequest);
+		Credentials credentials = assumeRoleResult.getCredentials();
+		Map<String,String> sts = new HashMap<String,String>();
+		sts.put("AccessKeyId", credentials.getAccessKeyId());
+		sts.put("SecretAccessKey", credentials.getSecretAccessKey());
+		sts.put("SessionToken", credentials.getSessionToken());
+		sts.put("Expiration", formatDateAsIso8601(credentials.getExpiration()));
+		sts.put("Version", "1");
+		
+		writeFileToResponse(createSerializedJSON(sts), STS_TOKEN_FILE_NAME, resp);
+	}
+	
+	/**
+	 * Create serialized JSON for the given map of key/value pairs
+	 * @param content
+	 * @return
+	 */
+	public static String createSerializedJSON(Map<String,String> content) {
+		JSONObject o = new JSONObject();
+		for (Map.Entry<String,String> entry : content.entrySet()) {
+			o.put(entry.getKey(), entry.getValue());
+		}
+		return o.toString();
+	}
+	
+	/**
+	 * Create the HTTP response for downloading a file
+	 * 
+	 * @param content the file content
+	 * @param filename the file name
+	 * @param resp the HTTP response to write the result to
+	 * @throws IOException
+	 */
+	public static void writeFileToResponse(String content, String filename, HttpServletResponse resp) throws IOException {
+		resp.setStatus(200);		
+		resp.setContentType("application/force-download");
+		resp.setCharacterEncoding(UTF8);
+		resp.setHeader("Content-Transfer-Encoding", "binary");
+		resp.setHeader("Cache-Control", "no-store, no-cache");
+		resp.setHeader("Content-Disposition","attachment; filename=\""+filename+"\"");
+		byte[] bytes = content.getBytes(UTF8);
+		resp.setContentLength(bytes.length);
+		try(PrintWriter writer = resp.getWriter()) {
+			writer.print(bytes);
+			writer.flush();	
+		}
+	}
+	
+	private static final String BEARER_PREFIX = "Bearer ";
+	
+	/**
+	 * Extract the bearer authorization token from an HTTP request
+	 * @param req
+	 * @return the authorization token, or null if none is present
+	 */
+	static String getBearerAuthorizationToken(HttpServletRequest req) {
+		String authHeader = req.getHeader("Authorization");
+		if (StringUtils.isEmpty(authHeader)) {
+			return null;
+		}
+		if (authHeader.toLowerCase().startsWith(BEARER_PREFIX.toLowerCase())) {
+			return authHeader.substring(BEARER_PREFIX.length());
+		}
+		return null;
+	}
+		
+	/**
+	 * Create the HTTP response that downloads a file containing a token
+	 * @param token
+	 * @param resp
+	 * @throws IOException
+	 */
+	void returnOidcToken(String token, HttpServletResponse resp) throws IOException {
+		writeFileToResponse(token, OIDC_TOKEN_FILE_NAME, resp);
+	}
+	
+	private void returnToken(RequestType requestType, IdAndAccessToken idAndAccessTokens, HttpServletRequest req, HttpServletResponse resp) throws IOException {
+		// parse ID Token
+		Claims claims = jwtClaimsExtractor.extractClaims(idAndAccessTokens.getIdToken().getToken());
+		List<String> teamIds = claims.get(TEAM_CLAIM_NAME, List.class);
+		
+		String selectedTeam = null;
+		String roleArn = null;
+		for (String teamId : teamToRoleMap.keySet()) {
+			if (teamIds.contains(teamId)) {
+				selectedTeam = teamId;
+				roleArn = teamToRoleMap.get(teamId);
+				break;
+			}
+		}
+
+		if (roleArn==null) {
+			resp.setContentType("text/html");
+			try (ServletOutputStream os=resp.getOutputStream()) {
+				os.println("<html><head/><body>");
+				os.println("<h3>To proceed you must be a member of one of these Synapse teams:</h3>");
+				os.println("<ul>");
+				for (String teamId : teamToRoleMap.keySet()) {
+					os.println(String.format("<li><a href=\"https://www.synapse.org/#!Team:%1$s\">https://www.synapse.org/#!Team:%1$s</a></li>", teamId));
+				}
+				os.println("</ul>");
+				os.println("</body></html>");
+			}
+			resp.setStatus(200);
+			return;
+		}
+		
+		// we take different actions for different services
+		switch(requestType) {
+		case SC_CONSOLE:
+			redirectToSCConsole(claims, roleArn, selectedTeam, req, resp);
+			break;
+		case STS_TOKEN:
+			returnStsToken(claims, roleArn, selectedTeam, resp);
+			break;
+		case ID_TOKEN:
+			// creates file for use here: https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-role.html#cli-configure-role-oidc
+			returnOidcToken(idAndAccessTokens.getIdToken().getToken(), resp);
+			break;
+		case ACCESS_TOKEN:
+			returnOidcToken(idAndAccessTokens.getAccessToken().getToken(), resp);
+			break;
+		default:
+			throw new IllegalStateException("Unrecognized request type: "+requestType);
+		}
+	}
+	
+	private String getIdToken(String bearerToken) throws IOException {
+		return httpGetExecutor.executeHttpGet(USER_INFO_URL, bearerToken); // TODO add claims
+	}
 		
 	private void doGetIntern(HttpServletRequest req, HttpServletResponse resp)
 				throws Exception {
 		
-		OAuth2Api.BasicOAuth2Service service = null;
 		String uri = req.getRequestURI();
-		if (uri.equals("/") || StringUtils.isEmpty(uri)) {
-			// this is the initial redirect to go log in with Synapse
-			String redirectBackUrl = getRedirectBackUrlSynapse(req);
-			String redirectUrl = new OAuth2Api(getAuthorizeUrl(), TOKEN_URL).
-					getAuthorizationUrl(new OAuthConfig(getClientIdSynapse(), null, redirectBackUrl, null, "openid", null));
-			resp.setHeader(LOCATION, redirectUrl);
-			resp.setStatus(303);
-		}	else if (uri.equals(REDIRECT_URI)) {
+		if (isOAuthEntrypointUri(uri)) {
+			String bearerAuthorizationToken = getBearerAuthorizationToken(req);
+			if (STS_TOKEN_URI.equals(uri) && StringUtils.isNotEmpty(bearerAuthorizationToken)) {
+				// this is the invocation of a web service
+				
+				// Get an OIDC id token from the userinfo endpoint
+				String idToken = getIdToken(bearerAuthorizationToken);
+				IdAndAccessToken idAndAccessToken = 
+						new IdAndAccessToken(new Token(idToken, ""), 
+								new Token(bearerAuthorizationToken, ""));
+				// now return the STS token for the given user
+				returnToken(RequestType.STS_TOKEN, idAndAccessToken, req, resp);
+			} else {
+				// this is the initial redirect to go log in with Synapse
+				String redirectBackUrl = getRedirectBackUrlSynapse(req);
+				String state = getRequestTypeFromUri(uri).name();
+				String redirectUrl = new OAuth2Api(getAuthorizeUrl(state), TOKEN_URL).
+						getAuthorizationUrl(new OAuthConfig(getClientIdSynapse(), null, redirectBackUrl, null, "openid", null));
+				resp.setHeader(LOCATION, redirectUrl);
+				resp.setStatus(303);
+			}
+		} else if (REDIRECT_URI.equals(uri)) {
 			// this is the second step, after logging in to Synapse
-			service = (OAuth2Api.BasicOAuth2Service)(new OAuth2Api(getAuthorizeUrl(), TOKEN_URL)).
-					createService(new OAuthConfig(getClientIdSynapse(), getClientSecretSynapse(), getRedirectBackUrlSynapse(req), null, null, null));
+			RequestType requestType = RequestType.valueOf(req.getParameter(STATE));
 			String authorizationCode = req.getParameter("code");
-			Token idToken = null;
+			IdAndAccessToken tokens = null;
 			
 			try {
-				idToken = service.getIdToken(null, new Verifier(authorizationCode));
+				 tokens = this.tokenRetriever.getTokens(getRedirectBackUrlSynapse(req), authorizationCode);
 			} catch (OAuthException e) {
 				handleException(e, resp);
 				return;
 			}
 			
-			// parse ID Token
-			Jwt<Header,Claims> jwt = parseJWT(idToken.getToken());
-			Claims claims = jwt.getBody();
-			List<String> teamIds = claims.get(TEAM_CLAIM_NAME, List.class);
+			returnToken(requestType, tokens, req, resp);
 			
-			String selectedTeam = null;
-			String roleArn = null;
-			for (String teamId : teamToRoleMap.keySet()) {
-				if (teamIds.contains(teamId)) {
-					selectedTeam = teamId;
-					roleArn = teamToRoleMap.get(teamId);
-					break;
-				}
-			}
-
-			if (roleArn==null) {
-				resp.setContentType("text/html");
-				try (ServletOutputStream os=resp.getOutputStream()) {
-					os.println("<html><head/><body>");
-					os.println("<h3>To proceed you must be a member of one of these Synapse teams:</h3>");
-					os.println("<ul>");
-					for (String teamId : teamToRoleMap.keySet()) {
-						os.println(String.format("<li><a href=\"https://www.synapse.org/#!Team:%1$s\">https://www.synapse.org/#!Team:%1$s</a></li>", teamId));
-					}
-					os.println("</ul>");
-					os.println("</body></html>");
-				}
-				resp.setStatus(200);
-				return;
-			}
-
-			AWSSecurityTokenService stsClient = AWSSecurityTokenServiceClientBuilder.standard()
-					.withRegion(Regions.fromName(awsRegion)).build();
-			
-			AssumeRoleRequest assumeRoleRequest = createAssumeRoleRequest(claims, roleArn, selectedTeam);
-			
-			AssumeRoleResult assumeRoleResult = stsClient.assumeRole(assumeRoleRequest);
-			Credentials credentials = assumeRoleResult.getCredentials();
-			// redirect to AWS login
-			String redirectURL = getConsoleLoginURL(req, credentials, new HttpGetExecutor() {
-
-				@Override
-				public String executeHttpGet(String urlString) throws IOException {
-					URL url = new URL(urlString);
-					URLConnection conn = url.openConnection();
-					BufferedReader bufferReader = new BufferedReader(
-							new InputStreamReader(conn.getInputStream()));  
-					return bufferReader.readLine();
-				}});
-			
-			resp.setHeader(LOCATION, redirectURL);
-			resp.setStatus(303);
-		} else if (uri.equals(HEALTH_URI)) {
+		} else if (HEALTH_URI.equals(uri)) {
 			resp.setStatus(200);
-		} else if (uri.equals(ABOUT_URI)) {
+		} else if (ABOUT_URI.equals(uri)) {
 			// Currently returns version
 			resp.setContentType("application/json");
 			resp.setCharacterEncoding(UTF8);
@@ -424,7 +712,7 @@ public class Auth extends HttpServlet {
 			PrintWriter out = resp.getWriter();
 			out.print(o.toString());
 			out.flush();
-		} else if (uri.equals(SECTOR_IDENTIFIER_URI)) {
+		} else if (SECTOR_IDENTIFIER_URI.equals(uri)) {
 			// returns a JSONArray containing all the redirect URIs under the sector identifier
 			resp.setContentType("application/json");
 			resp.setCharacterEncoding(UTF8);
@@ -436,7 +724,7 @@ public class Auth extends HttpServlet {
 			PrintWriter out = resp.getWriter();
 			out.print(o.toString());
 			out.flush();
-		} else {
+		} else { // we redirect unrecognized URIs back to the main login URL
 			resp.setHeader(LOCATION, getThisEndpoint(req));
 			resp.setStatus(303);
 		}

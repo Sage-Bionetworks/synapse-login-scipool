@@ -14,5 +14,5 @@ public interface HttpGetExecutor {
 	 * Anything other than a normal result (2xx status)
 	 * is mapped to an exception
 	 */
-	String executeHttpGet(String url) throws IOException;
+	String executeHttpGet(String url, String accessToken) throws IOException;
 }

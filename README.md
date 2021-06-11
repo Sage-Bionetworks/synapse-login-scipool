@@ -1,6 +1,31 @@
 # Overview
-This app logs in to the AWS Console using Synapse as the OpenID Connect
-(OIDC) identity provider.
+
+This application logs in to the AWS Console using Synapse as the OpenID Connect
+(OIDC) identity provider.  The application also provides the following alternate endpoints:
+
+
+`/accesstoken`: returns a Synapse access token for the user who has logged in to Synapse
+
+`/idtoken`: returns a Synapse OIDC id token for the user who has logged in to Synapse
+
+`/ststoken`: returns an STS token as a JSON file suitable for using with the AWS CLI and providing the same permissions as one has in the AWS Console.  When called without any authentication, the application will initiate the OAuth protocol to authenticate.  If a Synapse access token is included as a bearer token in the Authorization header then the application will invisibly validate the user and return the STS token.  An example is:
+
+```
+curl -H Authorization:"Bearer <synapse-access-token>" https://sc.sageit.org/ststoken
+```
+
+response:
+
+```
+{
+  "Version": 1,
+  "AccessKeyId": "an AWS access key",
+  "SecretAccessKey": "your AWS secret access key",
+  "SessionToken": "the AWS session token for temporary credentials", 
+  "Expiration": "ISO8601 timestamp when the credentials expire"
+}
+```
+
 
 ## Configurations
 The app is configured with parameters listed below, which can be passed as
