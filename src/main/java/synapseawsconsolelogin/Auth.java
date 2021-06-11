@@ -141,7 +141,7 @@ public class Auth extends HttpServlet {
 	/*
 	 * File name for the AWS config file containing the downloaded STS token
 	 */
-	private static final String STS_TOKEN_FILE_NAME = "config";
+	private static final String STS_TOKEN_FILE_NAME = "ststoken.json";
 	
 	/*
 	 * File name for the downloaded OIDC (ID or access) token

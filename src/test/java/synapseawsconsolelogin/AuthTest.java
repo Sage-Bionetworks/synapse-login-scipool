@@ -432,7 +432,7 @@ public class AuthTest {
 		// method under test
 		auth.returnStsToken(claims, roleArn, selectedTeam, mockHttpResponse);
 		
-		verify(mockHttpResponse).setHeader("Content-Disposition","attachment; filename=\"config\"");
+		verify(mockHttpResponse).setHeader("Content-Disposition","attachment; filename=\"ststoken.json\"");
 		verify(mockPrintWriter).print(byteArrayCaptor.capture());
 		JSONObject actual = new JSONObject(new String(byteArrayCaptor.getValue(),Charset.forName("UTF8")));
 		assertEquals("accessKeyId", actual.getString("AccessKeyId"));
@@ -518,7 +518,7 @@ public class AuthTest {
 		// method under test
 		auth.doGet(mockHttpRequest, mockHttpResponse);
 		
-		verify(mockHttpResponse).setHeader("Content-Disposition","attachment; filename=\"config\"");
+		verify(mockHttpResponse).setHeader("Content-Disposition","attachment; filename=\"ststoken.json\"");
 		verify(mockPrintWriter).print(byteArrayCaptor.capture());
 		JSONObject actual = new JSONObject(new String(byteArrayCaptor.getValue(),Charset.forName("UTF8")));
 		assertEquals("accessKeyId", actual.getString("AccessKeyId"));
@@ -567,7 +567,7 @@ public class AuthTest {
 		// method under test
 		auth.doGet(mockHttpRequest, mockHttpResponse);
 		
-		verify(mockHttpResponse).setHeader("Content-Disposition","attachment; filename=\"config\"");
+		verify(mockHttpResponse).setHeader("Content-Disposition","attachment; filename=\"ststoken.json\"");
 		verify(mockPrintWriter).print(byteArrayCaptor.capture());
 		JSONObject actual = new JSONObject(new String(byteArrayCaptor.getValue(),Charset.forName("UTF8")));
 		assertEquals("accessKeyId", actual.getString("AccessKeyId"));
