@@ -240,7 +240,7 @@ public class Auth extends HttpServlet {
 		
 		JWTClaimsExtractor jwtClaimsExtractor = new JWTClaimsExtractor() {
 			@Override
-			public Claims extractClaims(String jwtString) {
+			public Map<String,Object> extractClaims(String jwtString) {
 				Jwt<Header,Claims> jwt = parseJWT(jwtString);
 				return jwt.getBody();
 			}
@@ -399,7 +399,7 @@ public class Auth extends HttpServlet {
 		return tagValue.replaceAll("[^\\p{L}\\p{Z}\\p{N}_.:/=+\\-@]", " ");
 	}
 	
-	public AssumeRoleRequest createAssumeRoleRequest(Claims claims, String roleArn, String selectedTeam) {
+	public AssumeRoleRequest createAssumeRoleRequest(Map<String,Object> claims, String roleArn, String selectedTeam) {
 		// here we collect all the user information to be added to the session
 		Map<String,String> sessionTags = new HashMap<String,String>();
 		
@@ -424,7 +424,7 @@ public class Auth extends HttpServlet {
 		StringBuilder stringBuilder = new StringBuilder();
 		boolean first=true;
 		for (String claimName : getSessionClaimNames()) {
-			String claimValue = claims.get(claimName, String.class);
+			String claimValue = (String)claims.get(claimName);
 			if (StringUtils.isEmpty(claimValue)) continue;
 			if (first) first=false; else stringBuilder.append(":");
 			stringBuilder.append(claimValue);
@@ -498,7 +498,7 @@ public class Auth extends HttpServlet {
 	 * @param resp
 	 * @throws IOException
 	 */
-	void redirectToSCConsole(Claims claims, String roleArn, String selectedTeam, HttpServletRequest req, HttpServletResponse resp) throws IOException {
+	void redirectToSCConsole(Map<String,Object> claims, String roleArn, String selectedTeam, HttpServletRequest req, HttpServletResponse resp) throws IOException {
 		AssumeRoleRequest assumeRoleRequest = createAssumeRoleRequest(claims, roleArn, selectedTeam);
 		
 		AssumeRoleResult assumeRoleResult = stsClient.assumeRole(assumeRoleRequest);
@@ -528,17 +528,17 @@ public class Auth extends HttpServlet {
 	 * @param resp
 	 * @throws IOException
 	 */
-	void returnStsToken(Claims claims, String roleArn, String selectedTeam, HttpServletResponse resp) throws IOException {
+	void returnStsToken(Map<String,Object> claims, String roleArn, String selectedTeam, HttpServletResponse resp) throws IOException {
 		AssumeRoleRequest assumeRoleRequest = createAssumeRoleRequest(claims, roleArn, selectedTeam);
 		
 		AssumeRoleResult assumeRoleResult = stsClient.assumeRole(assumeRoleRequest);
 		Credentials credentials = assumeRoleResult.getCredentials();
-		Map<String,String> sts = new HashMap<String,String>();
+		Map<String,Object> sts = new HashMap<String,Object>();
 		sts.put("AccessKeyId", credentials.getAccessKeyId());
 		sts.put("SecretAccessKey", credentials.getSecretAccessKey());
 		sts.put("SessionToken", credentials.getSessionToken());
 		sts.put("Expiration", formatDateAsIso8601(credentials.getExpiration()));
-		sts.put("Version", "1");
+		sts.put("Version", 1);
 		
 		writeFileToResponse(createSerializedJSON(sts), STS_TOKEN_FILE_NAME, resp);
 	}
@@ -548,9 +548,9 @@ public class Auth extends HttpServlet {
 	 * @param content
 	 * @return
 	 */
-	public static String createSerializedJSON(Map<String,String> content) {
+	public static String createSerializedJSON(Map<String,Object> content) {
 		JSONObject o = new JSONObject();
-		for (Map.Entry<String,String> entry : content.entrySet()) {
+		for (Map.Entry<String,Object> entry : content.entrySet()) {
 			o.put(entry.getKey(), entry.getValue());
 		}
 		return o.toString();
@@ -607,10 +607,14 @@ public class Auth extends HttpServlet {
 		writeFileToResponse(token, OIDC_TOKEN_FILE_NAME, resp);
 	}
 	
-	private void returnToken(RequestType requestType, IdAndAccessToken idAndAccessTokens, HttpServletRequest req, HttpServletResponse resp) throws IOException {
+	private void returnToken(RequestType requestType,  
+			String accessToken,
+			String idToken,
+			Map<String,Object> idTokenClaims,
+			HttpServletRequest req, 
+			HttpServletResponse resp) throws IOException {
 		// parse ID Token
-		Claims claims = jwtClaimsExtractor.extractClaims(idAndAccessTokens.getIdToken().getToken());
-		List<String> teamIds = claims.get(TEAM_CLAIM_NAME, List.class);
+		List<String> teamIds = (List<String>)idTokenClaims.get(TEAM_CLAIM_NAME);
 		
 		String selectedTeam = null;
 		String roleArn = null;
@@ -641,25 +645,26 @@ public class Auth extends HttpServlet {
 		// we take different actions for different services
 		switch(requestType) {
 		case SC_CONSOLE:
-			redirectToSCConsole(claims, roleArn, selectedTeam, req, resp);
+			redirectToSCConsole(idTokenClaims, roleArn, selectedTeam, req, resp);
 			break;
 		case STS_TOKEN:
-			returnStsToken(claims, roleArn, selectedTeam, resp);
+			returnStsToken(idTokenClaims, roleArn, selectedTeam, resp);
 			break;
 		case ID_TOKEN:
 			// creates file for use here: https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-role.html#cli-configure-role-oidc
-			returnOidcToken(idAndAccessTokens.getIdToken().getToken(), resp);
+			returnOidcToken(idToken, resp);
 			break;
 		case ACCESS_TOKEN:
-			returnOidcToken(idAndAccessTokens.getAccessToken().getToken(), resp);
+			returnOidcToken(accessToken, resp);
 			break;
 		default:
 			throw new IllegalStateException("Unrecognized request type: "+requestType);
 		}
 	}
 	
-	private String getIdToken(String bearerToken) throws IOException {
-		return httpGetExecutor.executeHttpGet(USER_INFO_URL, bearerToken); // TODO add claims
+	private Map<String,Object> getUserInfo(String bearerToken) throws IOException {
+		String responseBody = httpGetExecutor.executeHttpGet(USER_INFO_URL, bearerToken);
+		return new JSONObject(responseBody).toMap();
 	}
 		
 	private void doGetIntern(HttpServletRequest req, HttpServletResponse resp)
@@ -669,15 +674,10 @@ public class Auth extends HttpServlet {
 		if (isOAuthEntrypointUri(uri)) {
 			String bearerAuthorizationToken = getBearerAuthorizationToken(req);
 			if (STS_TOKEN_URI.equals(uri) && StringUtils.isNotEmpty(bearerAuthorizationToken)) {
-				// this is the invocation of a web service
-				
-				// Get an OIDC id token from the userinfo endpoint
-				String idToken = getIdToken(bearerAuthorizationToken);
-				IdAndAccessToken idAndAccessToken = 
-						new IdAndAccessToken(new Token(idToken, ""), 
-								new Token(bearerAuthorizationToken, ""));
+				// Get user info from the userinfo endpoint
+				Map<String,Object> userInfoClaims = getUserInfo(bearerAuthorizationToken);
 				// now return the STS token for the given user
-				returnToken(RequestType.STS_TOKEN, idAndAccessToken, req, resp);
+				returnToken(RequestType.STS_TOKEN, bearerAuthorizationToken, null, userInfoClaims, req, resp);
 			} else {
 				// this is the initial redirect to go log in with Synapse
 				String redirectBackUrl = getRedirectBackUrlSynapse(req);
@@ -700,7 +700,12 @@ public class Auth extends HttpServlet {
 				return;
 			}
 			
-			returnToken(requestType, tokens, req, resp);
+			returnToken(requestType, 
+					tokens.getAccessToken().getToken(),
+					tokens.getIdToken().getToken(),
+					jwtClaimsExtractor.extractClaims(tokens.getIdToken().getToken()),
+					req, 
+					resp);
 			
 		} else if (HEALTH_URI.equals(uri)) {
 			resp.setStatus(200);
