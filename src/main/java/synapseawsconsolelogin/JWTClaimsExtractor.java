@@ -1,8 +1,8 @@
 package synapseawsconsolelogin;
 
-import io.jsonwebtoken.Claims;
+import java.util.Map;
 
 public interface JWTClaimsExtractor {
-	public Claims extractClaims(String jwt);
+	public Map<String,Object> extractClaims(String jwt);
 
 }

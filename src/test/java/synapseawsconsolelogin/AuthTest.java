@@ -11,7 +11,6 @@ import static org.mockito.Matchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import java.io.PrintWriter;
 import java.nio.charset.Charset;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
@@ -28,6 +27,7 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
 import org.apache.commons.lang.StringUtils;
+import org.json.JSONArray;
 import org.json.JSONObject;
 import org.junit.After;
 import org.junit.Assume;
@@ -94,6 +94,15 @@ public class AuthTest {
 	
 	private static final String ID_TOKEN = "id-token";
 	private static final String ACCESS_TOKEN = "access-token";
+	private static final String USER_INFO_STRING;
+	
+	static {
+		JSONObject claims = new JSONObject();
+		JSONArray array = new JSONArray();
+		array.put("345678");
+		claims.put("team", array);
+		USER_INFO_STRING = claims.toString();
+	}
 	
 	private static final String STS_EXPIRES_ON = "2021-10-21T12:59:59Z";
 	
@@ -442,10 +451,10 @@ public class AuthTest {
 	
 	@Test
 	public void testCreateJSONfile() throws Exception {
-		Map<String,String> content = new LinkedHashMap<String,String>();
+		Map<String,Object> content = new LinkedHashMap<String,Object>();
 		content.put("key1", "foo");
-		content.put("key2", "bar");
-		String expectedJson = "{\"key1\":\"foo\",\"key2\":\"bar\"}";
+		content.put("key2", 99);
+		String expectedJson = "{\"key1\":\"foo\",\"key2\":99}";
 		
 		// method under test
 		assertEquals(expectedJson, Auth.createSerializedJSON(content));
@@ -558,7 +567,7 @@ public class AuthTest {
 		mockIncomingUrl("https://www.foo.com", "/ststoken");
 		when(mockHttpRequest.getHeader("Authorization")).thenReturn("Bearer access-token");
 		when(mockHttpGetExecutor.executeHttpGet("https://repo-prod.prod.sagebase.org/auth/v1/oauth2/userinfo",
-				"access-token")).thenReturn(ID_TOKEN);
+				"access-token")).thenReturn(USER_INFO_STRING);
 		
 		// method under test
 		auth.doGet(mockHttpRequest, mockHttpResponse);
