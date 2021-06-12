@@ -82,9 +82,6 @@ public class AuthTest {
 	private HttpServletResponse mockHttpResponse;
 	
 	@Mock
-	private PrintWriter mockPrintWriter;
-	
-	@Mock
 	private ServletOutputStream mockOutputStream;
 	
 	@Captor
@@ -126,7 +123,6 @@ public class AuthTest {
 		
 		mockIncomingUrl("https://www.foo.com", "/bar");
 
-		when(mockHttpResponse.getWriter()).thenReturn(mockPrintWriter);
 		when(mockHttpResponse.getOutputStream()).thenReturn(mockOutputStream);
 		
 		AssumeRoleResult assumeRoleResult = new AssumeRoleResult();
@@ -415,9 +411,9 @@ public class AuthTest {
 		verify(mockHttpResponse).setHeader("Content-Transfer-Encoding", "binary");
 		verify(mockHttpResponse).setHeader("Cache-Control", "no-store, no-cache");
 		verify(mockHttpResponse).setHeader("Content-Disposition","attachment; filename=\"file.txt\"");
-		verify(mockPrintWriter).print(expectedBytes);
+		verify(mockOutputStream).write(expectedBytes);
 		verify(mockHttpResponse).setContentLength(expectedBytes.length);		
-		verify(mockPrintWriter).flush();
+		verify(mockOutputStream).flush();
 	}
 	
 	@Test
@@ -433,7 +429,7 @@ public class AuthTest {
 		auth.returnStsToken(claims, roleArn, selectedTeam, mockHttpResponse);
 		
 		verify(mockHttpResponse).setHeader("Content-Disposition","attachment; filename=\"ststoken.json\"");
-		verify(mockPrintWriter).print(byteArrayCaptor.capture());
+		verify(mockOutputStream).write(byteArrayCaptor.capture());
 		JSONObject actual = new JSONObject(new String(byteArrayCaptor.getValue(),Charset.forName("UTF8")));
 		assertEquals("accessKeyId", actual.getString("AccessKeyId"));
 		assertEquals("secretAccessKey", actual.getString("SecretAccessKey"));
@@ -464,7 +460,7 @@ public class AuthTest {
 		auth.returnOidcToken(expectedContent, mockHttpResponse);
 		
 		verify(mockHttpResponse).setHeader("Content-Disposition","attachment; filename=\"synapse_oidc_token\"");
-		verify(mockPrintWriter).print(expectedBytes);
+		verify(mockOutputStream).write(expectedBytes);
 		verify(mockHttpResponse).setContentLength(expectedBytes.length);		
 	}
 	
@@ -519,7 +515,7 @@ public class AuthTest {
 		auth.doGet(mockHttpRequest, mockHttpResponse);
 		
 		verify(mockHttpResponse).setHeader("Content-Disposition","attachment; filename=\"ststoken.json\"");
-		verify(mockPrintWriter).print(byteArrayCaptor.capture());
+		verify(mockOutputStream).write(byteArrayCaptor.capture());
 		JSONObject actual = new JSONObject(new String(byteArrayCaptor.getValue(),Charset.forName("UTF8")));
 		assertEquals("accessKeyId", actual.getString("AccessKeyId"));
 		assertEquals("secretAccessKey", actual.getString("SecretAccessKey"));
@@ -538,7 +534,7 @@ public class AuthTest {
 		
 		verify(mockHttpResponse).setHeader("Content-Disposition","attachment; filename=\"synapse_oidc_token\"");
 		byte[] expectedBytes = ACCESS_TOKEN.getBytes(Charset.forName("UTF8"));
-		verify(mockPrintWriter).print(expectedBytes);
+		verify(mockOutputStream).write(expectedBytes);
 		verify(mockHttpResponse).setContentLength(expectedBytes.length);		
 	}
 	
@@ -553,7 +549,7 @@ public class AuthTest {
 		
 		verify(mockHttpResponse).setHeader("Content-Disposition","attachment; filename=\"synapse_oidc_token\"");
 		byte[] expectedBytes = ACCESS_TOKEN.getBytes(Charset.forName("UTF8"));
-		verify(mockPrintWriter).print(expectedBytes);
+		verify(mockOutputStream).write(expectedBytes);
 		verify(mockHttpResponse).setContentLength(expectedBytes.length);		
 	}
 	
@@ -568,7 +564,7 @@ public class AuthTest {
 		auth.doGet(mockHttpRequest, mockHttpResponse);
 		
 		verify(mockHttpResponse).setHeader("Content-Disposition","attachment; filename=\"ststoken.json\"");
-		verify(mockPrintWriter).print(byteArrayCaptor.capture());
+		verify(mockOutputStream).write(byteArrayCaptor.capture());
 		JSONObject actual = new JSONObject(new String(byteArrayCaptor.getValue(),Charset.forName("UTF8")));
 		assertEquals("accessKeyId", actual.getString("AccessKeyId"));
 		assertEquals("secretAccessKey", actual.getString("SecretAccessKey"));

@@ -573,9 +573,9 @@ public class Auth extends HttpServlet {
 		resp.setHeader("Content-Disposition","attachment; filename=\""+filename+"\"");
 		byte[] bytes = content.getBytes(UTF8);
 		resp.setContentLength(bytes.length);
-		try(PrintWriter writer = resp.getWriter()) {
-			writer.print(bytes);
-			writer.flush();	
+		try (ServletOutputStream os = resp.getOutputStream()) {
+			os.write(bytes);
+			os.flush();	
 		}
 	}
 	
