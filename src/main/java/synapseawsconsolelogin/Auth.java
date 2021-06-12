@@ -183,9 +183,9 @@ public class Auth extends HttpServlet {
 		this.httpGetExecutor = httpGetExecutor;
 		this.tokenRetriever = tokenRetriever;
 		this.jwtClaimsExtractor = jwtClaimsExtractor;
-		initProperties();
-		appVersion = initAppVersion();
-		ssmParameterCache = new Properties();
+		
+		this.appVersion = initAppVersion();
+
 		String sessionTimeoutSecondsString=getProperty(SESSION_TIMEOUT_SECONDS_PARAMETER, false);
 		if (sessionTimeoutSecondsString==null) {
 			sessionTimeoutSeconds = ""+SESSION_TIMEOUT_SECONDS_DEFAULT;
@@ -204,10 +204,12 @@ public class Auth extends HttpServlet {
 			HttpGetExecutor httpGetExecutor, 
 			TokenRetriever tokenRetriever,
 			JWTClaimsExtractor jwtClaimsExtractor) {
+		initProperties();
 		init(stsClient, httpGetExecutor, tokenRetriever, jwtClaimsExtractor);
 	}
 		
 	public Auth() {
+		initProperties();
 		String awsRegion = getProperty(AWS_REGION_PARAMETER);
 		AWSSecurityTokenService stsClient = AWSSecurityTokenServiceClientBuilder.standard()
 				.withRegion(Regions.fromName(awsRegion)).build();
@@ -741,7 +743,9 @@ public class Auth extends HttpServlet {
 		if (StringUtils.isEmpty(propertyFileName)) {
 			propertyFileName = "global.properties";
 		}
-		properties = loadProperties(propertyFileName);
+		this.properties = loadProperties(propertyFileName);
+		
+		this.ssmParameterCache = new Properties();
 	}
 
 	private Properties loadProperties(String propertyFileName) {
