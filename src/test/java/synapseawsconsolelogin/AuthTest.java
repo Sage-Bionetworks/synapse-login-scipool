@@ -412,14 +412,13 @@ public class AuthTest {
 		byte[] expectedBytes = expectedContent.getBytes(Charset.forName("UTF8"));
 		
 		// method under test
-		Auth.writeFileToResponse(expectedContent, "file.txt", mockHttpResponse);
+		Auth.displayResponse(expectedContent, "text/plain", mockHttpResponse);
 		
 		verify(mockHttpResponse).setStatus(200);
-		verify(mockHttpResponse).setContentType("application/force-download");
+		verify(mockHttpResponse).setContentType("text/plain");
 		verify(mockHttpResponse).setCharacterEncoding("utf-8");
 		verify(mockHttpResponse).setHeader("Content-Transfer-Encoding", "binary");
 		verify(mockHttpResponse).setHeader("Cache-Control", "no-store, no-cache");
-		verify(mockHttpResponse).setHeader("Content-Disposition","attachment; filename=\"file.txt\"");
 		verify(mockOutputStream).write(expectedBytes);
 		verify(mockHttpResponse).setContentLength(expectedBytes.length);		
 		verify(mockOutputStream).flush();
@@ -437,7 +436,6 @@ public class AuthTest {
 		// method under test
 		auth.returnStsToken(claims, roleArn, selectedTeam, mockHttpResponse);
 		
-		verify(mockHttpResponse).setHeader("Content-Disposition","attachment; filename=\"ststoken.json\"");
 		verify(mockOutputStream).write(byteArrayCaptor.capture());
 		JSONObject actual = new JSONObject(new String(byteArrayCaptor.getValue(),Charset.forName("UTF8")));
 		assertEquals("accessKeyId", actual.getString("AccessKeyId"));
@@ -446,6 +444,7 @@ public class AuthTest {
 		assertEquals(1, actual.getInt("Version"));
 		assertEquals(STS_EXPIRES_ON, actual.getString("Expiration"));
 		
+		verify(mockHttpResponse).setContentType("application/json");
 		verify(mockHttpResponse).setContentLength(byteArrayCaptor.getValue().length);		
 	}
 	
@@ -468,7 +467,7 @@ public class AuthTest {
 		// method under test
 		auth.returnOidcToken(expectedContent, mockHttpResponse);
 		
-		verify(mockHttpResponse).setHeader("Content-Disposition","attachment; filename=\"synapse_oidc_token\"");
+		verify(mockHttpResponse).setContentType("text/plain");
 		verify(mockOutputStream).write(expectedBytes);
 		verify(mockHttpResponse).setContentLength(expectedBytes.length);		
 	}
@@ -523,13 +522,13 @@ public class AuthTest {
 		// method under test
 		auth.doGet(mockHttpRequest, mockHttpResponse);
 		
-		verify(mockHttpResponse).setHeader("Content-Disposition","attachment; filename=\"ststoken.json\"");
 		verify(mockOutputStream).write(byteArrayCaptor.capture());
 		JSONObject actual = new JSONObject(new String(byteArrayCaptor.getValue(),Charset.forName("UTF8")));
 		assertEquals("accessKeyId", actual.getString("AccessKeyId"));
 		assertEquals("secretAccessKey", actual.getString("SecretAccessKey"));
 		assertEquals("sessionToken", actual.getString("SessionToken"));
-		verify(mockHttpResponse).setContentLength(byteArrayCaptor.getValue().length);		
+		verify(mockHttpResponse).setContentLength(byteArrayCaptor.getValue().length);
+		verify(mockHttpResponse).setContentType("application/json");
 	}
 	
 	@Test
@@ -541,10 +540,10 @@ public class AuthTest {
 		// method under test
 		auth.doGet(mockHttpRequest, mockHttpResponse);
 		
-		verify(mockHttpResponse).setHeader("Content-Disposition","attachment; filename=\"synapse_oidc_token\"");
 		byte[] expectedBytes = ACCESS_TOKEN.getBytes(Charset.forName("UTF8"));
 		verify(mockOutputStream).write(expectedBytes);
 		verify(mockHttpResponse).setContentLength(expectedBytes.length);		
+		verify(mockHttpResponse).setContentType("text/plain");
 	}
 	
 	@Test
@@ -556,10 +555,10 @@ public class AuthTest {
 		// method under test
 		auth.doGet(mockHttpRequest, mockHttpResponse);
 		
-		verify(mockHttpResponse).setHeader("Content-Disposition","attachment; filename=\"synapse_oidc_token\"");
 		byte[] expectedBytes = ACCESS_TOKEN.getBytes(Charset.forName("UTF8"));
 		verify(mockOutputStream).write(expectedBytes);
 		verify(mockHttpResponse).setContentLength(expectedBytes.length);		
+		verify(mockHttpResponse).setContentType("text/plain");
 	}
 	
 	@Test
@@ -572,13 +571,28 @@ public class AuthTest {
 		// method under test
 		auth.doGet(mockHttpRequest, mockHttpResponse);
 		
-		verify(mockHttpResponse).setHeader("Content-Disposition","attachment; filename=\"ststoken.json\"");
 		verify(mockOutputStream).write(byteArrayCaptor.capture());
 		JSONObject actual = new JSONObject(new String(byteArrayCaptor.getValue(),Charset.forName("UTF8")));
 		assertEquals("accessKeyId", actual.getString("AccessKeyId"));
 		assertEquals("secretAccessKey", actual.getString("SecretAccessKey"));
 		assertEquals("sessionToken", actual.getString("SessionToken"));
 		verify(mockHttpResponse).setContentLength(byteArrayCaptor.getValue().length);		
+		verify(mockHttpResponse).setContentType("application/json");
+	}
+	
+	@Test
+	public void testDoGet_DownloadSTSTokenViaWebServiceRequest_Unauthorized() throws Exception {
+		mockIncomingUrl("https://www.foo.com", "/ststoken");
+		when(mockHttpRequest.getHeader("Authorization")).thenReturn("Bearer access-token");
+		when(mockHttpGetExecutor.executeHttpGet("https://repo-prod.prod.sagebase.org/auth/v1/oauth2/userinfo",
+				"access-token")).thenThrow(new HttpException(403, "Forbidden", null));
+		
+		// method under test
+		auth.doGet(mockHttpRequest, mockHttpResponse);
+		
+		verify(mockOutputStream).println("Error: Forbidden");
+		verify(mockHttpResponse).setContentType("text/plain");
+		verify(mockHttpResponse).setStatus(403);
 	}
 	
 	@Test

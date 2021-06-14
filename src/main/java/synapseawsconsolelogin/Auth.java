@@ -7,9 +7,9 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.PrintStream;
 import java.io.PrintWriter;
+import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.net.URLConnection;
 import java.net.URLEncoder;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
@@ -41,7 +41,6 @@ import org.json.JSONException;
 import org.json.JSONObject;
 import org.scribe.exceptions.OAuthException;
 import org.scribe.model.OAuthConfig;
-import org.scribe.model.Token;
 import org.scribe.model.Verifier;
 
 import com.amazonaws.AmazonClientException;
@@ -138,16 +137,6 @@ public class Auth extends HttpServlet {
 	
 	private static final String ISO_8601_DATE_FORMAT = "yyyy-MM-dd'T'HH:mm:ss'Z'";
 	
-	/*
-	 * File name for the AWS config file containing the downloaded STS token
-	 */
-	private static final String STS_TOKEN_FILE_NAME = "ststoken.json";
-	
-	/*
-	 * File name for the downloaded OIDC (ID or access) token
-	 */
-	private static final String OIDC_TOKEN_FILE_NAME = "synapse_oidc_token";
-
 	private Map<String,String> teamToRoleMap;
 	private String sessionTimeoutSeconds;
 	private Properties properties = null;
@@ -218,9 +207,14 @@ public class Auth extends HttpServlet {
 			@Override
 			public String executeHttpGet(String urlString, String accessToken) throws IOException {
 				URL url = new URL(urlString);
-				URLConnection conn = url.openConnection();
+				HttpURLConnection conn = (HttpURLConnection)url.openConnection();
 				if (StringUtils.isNotEmpty(accessToken)) {
 					conn.setRequestProperty("Authorization", BEARER_PREFIX+accessToken);
+				}
+				int status = conn.getResponseCode();
+				String message = conn.getResponseMessage();
+				if (status>=400) {
+					throw new HttpException(status, message, null);
 				}
 				BufferedReader bufferReader = new BufferedReader(
 						new InputStreamReader(conn.getInputStream()));  
@@ -329,14 +323,20 @@ public class Auth extends HttpServlet {
 			throws IOException {
 		try {
 			doGetIntern(req, resp);
+		} catch (HttpException e) {
+			resp.setStatus(e.getStatus());
+			resp.setContentType("text/plain");
+			try (ServletOutputStream os=resp.getOutputStream()) {
+				os.println("Error: "+e.getMessage());
+			}
 		} catch (Exception e) {
 			logger.log(Level.SEVERE, e.getMessage(), e);
+			resp.setStatus(500);
 			resp.setContentType("text/plain");
 			try (ServletOutputStream os=resp.getOutputStream()) {
 				os.println("Error:");
 				e.printStackTrace(new PrintStream(os));
 			}
-			resp.setStatus(500);
 		}
 	}
 	
@@ -540,7 +540,7 @@ public class Auth extends HttpServlet {
 		sts.put("Expiration", formatDateAsIso8601(credentials.getExpiration()));
 		sts.put("Version", 1);
 		
-		writeFileToResponse(createSerializedJSON(sts), STS_TOKEN_FILE_NAME, resp);
+		displayResponse(createSerializedJSON(sts), "application/json", resp);
 	}
 	
 	/**
@@ -560,17 +560,16 @@ public class Auth extends HttpServlet {
 	 * Create the HTTP response for downloading a file
 	 * 
 	 * @param content the file content
-	 * @param filename the file name
 	 * @param resp the HTTP response to write the result to
+	 * @param contentType
 	 * @throws IOException
 	 */
-	public static void writeFileToResponse(String content, String filename, HttpServletResponse resp) throws IOException {
+	public static void displayResponse(String content, String contentType, HttpServletResponse resp) throws IOException {
 		resp.setStatus(200);		
-		resp.setContentType("application/force-download");
+		resp.setContentType(contentType);
 		resp.setCharacterEncoding(UTF8);
 		resp.setHeader("Content-Transfer-Encoding", "binary");
 		resp.setHeader("Cache-Control", "no-store, no-cache");
-		resp.setHeader("Content-Disposition","attachment; filename=\""+filename+"\"");
 		byte[] bytes = content.getBytes(UTF8);
 		resp.setContentLength(bytes.length);
 		try (ServletOutputStream os = resp.getOutputStream()) {
@@ -604,7 +603,7 @@ public class Auth extends HttpServlet {
 	 * @throws IOException
 	 */
 	void returnOidcToken(String token, HttpServletResponse resp) throws IOException {
-		writeFileToResponse(token, OIDC_TOKEN_FILE_NAME, resp);
+		displayResponse(token, "text/plain", resp);
 	}
 	
 	private void returnToken(RequestType requestType,  
