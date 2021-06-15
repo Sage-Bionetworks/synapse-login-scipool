@@ -13,6 +13,7 @@
 		<url-pattern>/</url-pattern>
 		<url-pattern>/ststoken</url-pattern>
 		<url-pattern>/accesstoken</url-pattern>
+		<url-pattern>/personalaccesstoken</url-pattern>
 		<url-pattern>/idtoken</url-pattern>
 		<url-pattern>/synapse</url-pattern>
 		<url-pattern>/health</url-pattern>
