@@ -39,7 +39,18 @@ import org.apache.commons.lang.StringUtils;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
-import org.scribe.exceptions.OAuthException;
+import org.sagebionetworks.client.SynapseClient;
+import org.sagebionetworks.client.SynapseClientImpl;
+import org.sagebionetworks.client.exceptions.SynapseBadRequestException;
+import org.sagebionetworks.client.exceptions.SynapseException;
+import org.sagebionetworks.client.exceptions.SynapseForbiddenException;
+import org.sagebionetworks.client.exceptions.SynapseNotFoundException;
+import org.sagebionetworks.client.exceptions.SynapseServerException;
+import org.sagebionetworks.client.exceptions.SynapseServiceUnavailable;
+import org.sagebionetworks.client.exceptions.SynapseUnauthorizedException;
+import org.sagebionetworks.repo.model.auth.AccessTokenGenerationRequest;
+import org.sagebionetworks.repo.model.oauth.OAuthScope;
+import org.sagebionetworks.repo.model.oauth.OIDCClaimsRequestDetails;
 import org.scribe.model.OAuthConfig;
 import org.scribe.model.Verifier;
 
@@ -62,26 +73,44 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Header;
 import io.jsonwebtoken.Jwt;
 import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.lang.Collections;
 
 
 public class Auth extends HttpServlet {
 	private static Logger logger = Logger.getLogger("Auth");
 
 	private static final String TEAM_CLAIM_NAME = "team";
-	private static final String CLAIMS_TEMPLATE = "{\"team\":{\"values\":[\"%1$s\"]},%2$s}";
+	
+	// templates for constructing the 'claims' part of the OIDC authorization request
 	private static final String CLAIM_TEMPLATE="\"%1$s\":{\"essential\":true}";
+	private static final String CLAIM_TEMPLATE_WITH_VALUES="\"%1$s\":{\"values\":[\"%2$s\"]}";
+	
 	private static final String SYNAPSE_ENDPOINT = "https://repo-prod.prod.sagebase.org/auth/v1";
 	private static final String TOKEN_URL = SYNAPSE_ENDPOINT+"/oauth2/token";
-	private static final String USER_INFO_URL = SYNAPSE_ENDPOINT+"/oauth2/userinfo";
+	
+	// we need 'openid' scope to get user claims/info and we need 'authorize' scope to create
+	// a personal access token
+	private static final List<OAuthScope> OAUTH_SCOPES = 
+			Collections.arrayToList(new OAuthScope[] {OAuthScope.openid, OAuthScope.authorize});
+	private static final String SPACE_SEPARATED_SCOPES;
+	
+	static {
+		StringBuilder sb = new StringBuilder();
+		for (OAuthScope scope : OAUTH_SCOPES) {
+			sb.append(scope+" ");
+		}
+		SPACE_SEPARATED_SCOPES = sb.toString();
+	}
 	
 	/*
 	 * The default endpoint is the empty string or null, which 
 	 * logs the user in to Service Catalog.
 	 * The following are the supported alternate endpoints.
 	 */
-	private static final String STS_TOKEN_URI = "/ststoken"; // download STS token for the role indicated by the TEAM_TO_ROLE_ARN_MAP
-	private static final String ACCESS_TOKEN_URI = "/accesstoken"; // download the OIDC access token returned by Synapse
-	private static final String ID_TOKEN_URI = "/idtoken"; // download the OIDC ID token returned by Synapse
+	private static final String STS_TOKEN_URI = "/ststoken"; // return STS token for the role indicated by the TEAM_TO_ROLE_ARN_MAP
+	private static final String ACCESS_TOKEN_URI = "/accesstoken"; // return the OIDC access token returned by Synapse
+	private static final String PERSONAL_ACCESS_TOKEN_URI = "/personalaccesstoken"; // create and return a personal access token for Synapse
+	private static final String ID_TOKEN_URI = "/idtoken"; // return the OIDC ID token returned by Synapse
 
 	/*
 	 * This is the endpoint that Synapse redirects back to after logging the user in.
@@ -137,6 +166,15 @@ public class Auth extends HttpServlet {
 	
 	private static final String ISO_8601_DATE_FORMAT = "yyyy-MM-dd'T'HH:mm:ss'Z'";
 	
+	private static final String ERROR_HTML_HEADER = "<html><head/><body>\n<h3>An error has occurred:</h3>";
+	
+	private static final String ERROR_HTML_FOOTER = "</body></html>";
+	
+	private static final String BEARER_PREFIX = "Bearer ";
+	
+	private static final String PERSONAL_ACCESS_TOKEN_NAME = "AWS CLI for Service Catalog";
+	
+	
 	private Map<String,String> teamToRoleMap;
 	private String sessionTimeoutSeconds;
 	private Properties properties = null;
@@ -147,6 +185,7 @@ public class Auth extends HttpServlet {
 	private HttpGetExecutor httpGetExecutor	= null;
 	private TokenRetriever tokenRetriever = null;
 	private JWTClaimsExtractor jwtClaimsExtractor = null;
+	private SynapseClient synapseClient = null;
 	
 	Map<String,String> getTeamToRoleMap() throws JSONException {
 		String jsonString = getProperty(TEAM_TO_ROLE_ARN_MAP_PARAMETER);
@@ -167,11 +206,13 @@ public class Auth extends HttpServlet {
 	private void init(AWSSecurityTokenService stsClient, 
 			HttpGetExecutor httpGetExecutor, 
 			TokenRetriever tokenRetriever,
-			JWTClaimsExtractor jwtClaimsExtractor) {
+			JWTClaimsExtractor jwtClaimsExtractor,
+			SynapseClient synapseClient) {
 		this.stsClient = stsClient;
 		this.httpGetExecutor = httpGetExecutor;
 		this.tokenRetriever = tokenRetriever;
 		this.jwtClaimsExtractor = jwtClaimsExtractor;
+		this.synapseClient = synapseClient;
 		
 		this.appVersion = initAppVersion();
 
@@ -192,9 +233,10 @@ public class Auth extends HttpServlet {
 	public Auth(AWSSecurityTokenService stsClient, 
 			HttpGetExecutor httpGetExecutor, 
 			TokenRetriever tokenRetriever,
-			JWTClaimsExtractor jwtClaimsExtractor) {
+			JWTClaimsExtractor jwtClaimsExtractor,
+			SynapseClient synapseClient) {
 		initProperties();
-		init(stsClient, httpGetExecutor, tokenRetriever, jwtClaimsExtractor);
+		init(stsClient, httpGetExecutor, tokenRetriever, jwtClaimsExtractor, synapseClient);
 	}
 		
 	public Auth() {
@@ -214,7 +256,7 @@ public class Auth extends HttpServlet {
 				int status = conn.getResponseCode();
 				String message = conn.getResponseMessage();
 				if (status>=400) {
-					throw new HttpException(status, message, null);
+					throw new IOException(message);
 				}
 				BufferedReader bufferReader = new BufferedReader(
 						new InputStreamReader(conn.getInputStream()));  
@@ -239,8 +281,10 @@ public class Auth extends HttpServlet {
 				return jwt.getBody();
 			}
 		};
+		
+		SynapseClient synapseClient = new SynapseClientImpl();
 
-		init(stsClient, httpExecutor, tokenRetriever, jwtClaimsExtractor);
+		init(stsClient, httpExecutor, tokenRetriever, jwtClaimsExtractor, synapseClient);
 	}
 
 	
@@ -261,6 +305,25 @@ public class Auth extends HttpServlet {
 	public List<String> getRedirectURIs(String defaultRedirectURI) {
 		return getCommaSeparatedPropertyAsList(REDIRECT_URIS_PROPERTY_NAME, defaultRedirectURI);
 	}
+	
+	/*
+	 * Get 'claims' map to be used both (1) in the initial OAuth flow that logs in to Synapse,
+	 * and (2) when creating the scope for the personal access token.
+	 */
+	private Map<String, OIDCClaimsRequestDetails> getUserInfoClaims() {
+		Set<String> allClaims = new TreeSet<String>(getSessionClaimNames());
+		allClaims.addAll(getTagClaimNames());
+		Map<String, OIDCClaimsRequestDetails> result = new LinkedHashMap<String, OIDCClaimsRequestDetails>();
+		for (String claimName : allClaims) {
+			OIDCClaimsRequestDetails details = new OIDCClaimsRequestDetails();
+			details.setEssential(true);
+			if (TEAM_CLAIM_NAME.equals(claimName)) {
+				details.setValues(new ArrayList<String>(teamToRoleMap.keySet()));
+			}
+			result.put(claimName, details);
+		}
+		return result;
+	}
 
 	/**
 	 * 
@@ -270,18 +333,23 @@ public class Auth extends HttpServlet {
 	 * @return the URL that the browser should be redirect to in order to authenticate with Synapse
 	 */
 	public String getAuthorizeUrl(String state) {
-		Set<String> allClaims = new TreeSet<String>(getSessionClaimNames());
-		allClaims.addAll(getTagClaimNames());
-		StringBuilder sb = new StringBuilder();
+		StringBuilder sb = new StringBuilder("{");
 		boolean first=true;
-		for (String claimName : allClaims) {
-			if (claimName.equals(TEAM_CLAIM_NAME)) continue;
+		List<String> teams = null;
+		for (Map.Entry<String,OIDCClaimsRequestDetails> entry : getUserInfoClaims().entrySet()) {
+			String claimName = entry.getKey();
 			if (first) first=false; else sb.append(",");
-			sb.append(String.format(CLAIM_TEMPLATE, claimName));
+			if (Collections.isEmpty(entry.getValue().getValues())) {
+				sb.append(String.format(CLAIM_TEMPLATE, claimName));				
+			} else {
+				teams = entry.getValue().getValues();
+				sb.append(String.format(CLAIM_TEMPLATE_WITH_VALUES, claimName, StringUtils.join(teams, "\",\"")));
+			}
 		}
-		String claims = String.format(CLAIMS_TEMPLATE, StringUtils.join(teamToRoleMap.keySet(), "\",\""), sb.toString());
+		sb.append("}");
+		String claims = sb.toString();
 		String result = "https://signin.synapse.org?response_type=code&client_id=%s&redirect_uri=%s&"+
-		"claims={\"id_token\":"+claims+",\"userinfo\":"+claims+"}";
+				"claims={\"id_token\":"+claims+",\"userinfo\":"+claims+"}";
 		if (StringUtils.isNotEmpty(state)) {
 			result += "&"+STATE+"="+state;
 		}
@@ -317,29 +385,53 @@ public class Auth extends HttpServlet {
 		String result =  getProperty(SYNAPSE_OAUTH_CLIENT_SECRET_PARAMETER);
 		return result;
 	}
+	
+	static int synapseExceptionStatus(SynapseServerException e) {
+		if (e instanceof SynapseBadRequestException) return 400;
+		if (e instanceof SynapseForbiddenException) return 403;
+		if (e instanceof SynapseNotFoundException) return 404;
+		if (e instanceof SynapseServiceUnavailable) return 503;
+		if (e instanceof SynapseUnauthorizedException) return 401;
+		// there are other exception types to map but these are the most common
+		// and we don't expect others. For the rest we'll just return 500.
+		return 500;
+	}
 
 	@Override
 	public void doGet(HttpServletRequest req, HttpServletResponse resp)
 			throws IOException {
 		try {
 			doGetIntern(req, resp);
-		} catch (HttpException e) {
-			resp.setStatus(e.getStatus());
-			resp.setContentType("text/plain");
-			try (ServletOutputStream os=resp.getOutputStream()) {
-				os.println("Error: "+e.getMessage());
-			}
 		} catch (Exception e) {
-			logger.log(Level.SEVERE, e.getMessage(), e);
-			resp.setStatus(500);
-			resp.setContentType("text/plain");
-			try (ServletOutputStream os=resp.getOutputStream()) {
-				os.println("Error:");
-				e.printStackTrace(new PrintStream(os));
-			}
+			handleException(e, resp);
 		}
 	}
 	
+	/*
+	 * If we get an error when making a request to Synapse (e.g. a 403 for using
+	 * an invalid token) then we pass this along.  Otherwise we just return a 500
+	 * status.
+	 */
+	private static void handleException(Exception e, HttpServletResponse resp) throws IOException {
+		if (e instanceof SynapseServerException) {
+			resp.setStatus(synapseExceptionStatus((SynapseServerException)e));
+			resp.setContentType("text/html");
+			try (ServletOutputStream os=resp.getOutputStream()) {
+				os.println(ERROR_HTML_HEADER);
+				os.println(e.getMessage());
+				os.println(ERROR_HTML_FOOTER);
+			}
+		} else {
+			logger.log(Level.SEVERE, e.getMessage(), e);
+			resp.setStatus(500);
+			try (ServletOutputStream os=resp.getOutputStream()) {
+				os.println(ERROR_HTML_HEADER);
+				e.printStackTrace(new PrintStream(os));
+				os.println(ERROR_HTML_FOOTER);
+			}
+		}
+	}
+
 	// from https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_enable-console-custom-url.html#STSConsoleLink_programJava
 	String getConsoleLoginURL(HttpServletRequest req, Credentials federatedCredentials) throws IOException {
 
@@ -443,16 +535,6 @@ public class Auth extends HttpServlet {
 		return assumeRoleRequest;
 	}
 	
-	private static void handleException(Exception e, HttpServletResponse resp) throws IOException {
-		resp.setStatus(500);
-		try (ServletOutputStream os=resp.getOutputStream()) {
-			os.println("<html><head/><body>");
-			os.println("<h3>An error has occurred:</h3>");
-			os.println(e.getMessage());
-			os.println("</body></html>");
-		}
-	}
-	
 	/**
 	 * Determines whether the URI is one of the entrypoints to this application
 	 * @param uri The URI (omitting the scheme, host and optional port)
@@ -463,12 +545,13 @@ public class Auth extends HttpServlet {
 				StringUtils.isEmpty(uri) ||
 				STS_TOKEN_URI.equals(uri) ||
 				ID_TOKEN_URI.equals(uri) ||
-				ACCESS_TOKEN_URI.equals(uri);
+				ACCESS_TOKEN_URI.equals(uri) ||
+				PERSONAL_ACCESS_TOKEN_URI.equals(uri);
 	}
 	
 	/**
 	 * Maps the entrypoint URI to one of an enumeration of requests
-	 * (redirect to Service Catalog, download an STS file, download a token, etc.)
+	 * (redirect to Service Catalog, return an STS file, return a token, etc.)
 	 * 
 	 * @param uri the entrypoint URI
 	 * @return the mapped ENUM
@@ -485,6 +568,9 @@ public class Auth extends HttpServlet {
 		}
 		if (ACCESS_TOKEN_URI.equals(uri)) {
 			return RequestType.ACCESS_TOKEN;
+		}
+		if (PERSONAL_ACCESS_TOKEN_URI.equals(uri)) {
+			return RequestType.PERSONAL_ACCESS_TOKEN;
 		}
 		throw new IllegalArgumentException("Unrecognized uri: "+uri);
 	}
@@ -518,7 +604,7 @@ public class Auth extends HttpServlet {
 	}
 
 	/**
-	 * Create the HTTP response to download a file containing the STS token
+	 * Create the HTTP response to return the STS token
 	 * which will allow the bearer to assume the end-user role. The file is
 	 * in the format of an AWS CLI config file.
 	 * 
@@ -557,7 +643,7 @@ public class Auth extends HttpServlet {
 	}
 	
 	/**
-	 * Create the HTTP response for downloading a file
+	 * Create the HTTP response for displaying text in a web page
 	 * 
 	 * @param content the file content
 	 * @param resp the HTTP response to write the result to
@@ -578,8 +664,6 @@ public class Auth extends HttpServlet {
 		}
 	}
 	
-	private static final String BEARER_PREFIX = "Bearer ";
-	
 	/**
 	 * Extract the bearer authorization token from an HTTP request
 	 * @param req
@@ -597,7 +681,7 @@ public class Auth extends HttpServlet {
 	}
 		
 	/**
-	 * Create the HTTP response that downloads a file containing a token
+	 * Create the HTTP response that displays a token
 	 * @param token
 	 * @param resp
 	 * @throws IOException
@@ -606,12 +690,21 @@ public class Auth extends HttpServlet {
 		displayResponse(token, "text/plain", resp);
 	}
 	
+	String getPersonalAccessToken(String accessToken) throws SynapseException {
+		synapseClient.setBearerAuthorizationToken(accessToken);
+		AccessTokenGenerationRequest request = new AccessTokenGenerationRequest();
+		request.setName(PERSONAL_ACCESS_TOKEN_NAME);
+		request.setScope(OAUTH_SCOPES);
+		request.setUserInfoClaims(getUserInfoClaims());
+		return synapseClient.createPersonalAccessToken(request);
+	}
+	
 	private void returnToken(RequestType requestType,  
 			String accessToken,
 			String idToken,
 			Map<String,Object> idTokenClaims,
 			HttpServletRequest req, 
-			HttpServletResponse resp) throws IOException {
+			HttpServletResponse resp) throws IOException, SynapseException {
 		// parse ID Token
 		List<String> teamIds = (List<String>)idTokenClaims.get(TEAM_CLAIM_NAME);
 		
@@ -656,16 +749,21 @@ public class Auth extends HttpServlet {
 		case ACCESS_TOKEN:
 			returnOidcToken(accessToken, resp);
 			break;
+		case PERSONAL_ACCESS_TOKEN:
+			String pat = getPersonalAccessToken(accessToken);
+			returnOidcToken(pat, resp);
+			break;
 		default:
 			throw new IllegalStateException("Unrecognized request type: "+requestType);
 		}
 	}
 	
-	private Map<String,Object> getUserInfo(String bearerToken) throws IOException {
-		String responseBody = httpGetExecutor.executeHttpGet(USER_INFO_URL, bearerToken);
-		return new JSONObject(responseBody).toMap();
+	private Map<String,Object> getUserInfo(String bearerToken) throws SynapseException {
+		this.synapseClient.setBearerAuthorizationToken(bearerToken);
+		JSONObject userInfo = synapseClient.getUserInfoAsJSON();
+		return userInfo.toMap();
 	}
-		
+	
 	private void doGetIntern(HttpServletRequest req, HttpServletResponse resp)
 				throws Exception {
 		
@@ -682,7 +780,7 @@ public class Auth extends HttpServlet {
 				String redirectBackUrl = getRedirectBackUrlSynapse(req);
 				String state = getRequestTypeFromUri(uri).name();
 				String redirectUrl = new OAuth2Api(getAuthorizeUrl(state), TOKEN_URL).
-						getAuthorizationUrl(new OAuthConfig(getClientIdSynapse(), null, redirectBackUrl, null, "openid", null));
+						getAuthorizationUrl(new OAuthConfig(getClientIdSynapse(), null, redirectBackUrl, null, SPACE_SEPARATED_SCOPES, null));
 				resp.setHeader(LOCATION, redirectUrl);
 				resp.setStatus(303);
 			}
@@ -690,14 +788,7 @@ public class Auth extends HttpServlet {
 			// this is the second step, after logging in to Synapse
 			RequestType requestType = RequestType.valueOf(req.getParameter(STATE));
 			String authorizationCode = req.getParameter("code");
-			IdAndAccessToken tokens = null;
-			
-			try {
-				 tokens = this.tokenRetriever.getTokens(getRedirectBackUrlSynapse(req), authorizationCode);
-			} catch (OAuthException e) {
-				handleException(e, resp);
-				return;
-			}
+			IdAndAccessToken tokens =  this.tokenRetriever.getTokens(getRedirectBackUrlSynapse(req), authorizationCode);
 			
 			returnToken(requestType, 
 					tokens.getAccessToken().getToken(),

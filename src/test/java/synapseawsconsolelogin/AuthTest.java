@@ -16,6 +16,7 @@ import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -38,6 +39,11 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
 import org.mockito.Mock;
 import org.mockito.runners.MockitoJUnitRunner;
+import org.sagebionetworks.client.SynapseClient;
+import org.sagebionetworks.client.exceptions.SynapseForbiddenException;
+import org.sagebionetworks.repo.model.auth.AccessTokenGenerationRequest;
+import org.sagebionetworks.repo.model.oauth.OAuthScope;
+import org.sagebionetworks.repo.model.oauth.OIDCClaimsRequestDetails;
 import org.scribe.model.Token;
 
 import com.amazonaws.AmazonClientException;
@@ -76,6 +82,9 @@ public class AuthTest {
 	private HttpGetExecutor mockHttpGetExecutor;
 	
 	@Mock
+	private SynapseClient mockSynapseClient;
+	
+	@Mock
 	private JWTClaimsExtractor mockJWTClaimsExtractor;
 	
 	@Mock
@@ -87,6 +96,9 @@ public class AuthTest {
 	@Captor
 	private ArgumentCaptor<byte[]> byteArrayCaptor;
 	
+	@Captor
+	private ArgumentCaptor<AccessTokenGenerationRequest> accessTokenRequestCaptor;
+	
 	private static final String SC_CONSOLE_LOGIN_URL = "https://signin.aws.amazon.com/federation?Action=login&SigninToken=token"+
 			 "&Issuer=https%3A%2F%2Fwww.foo.com&Destination=https%3A%2F%2Fus-east-1.console.aws.amazon.com%2Fservicecatalog%2Fhome%3Fregion%3Dus-east-1%23%2Fproducts";
 	
@@ -94,14 +106,14 @@ public class AuthTest {
 	
 	private static final String ID_TOKEN = "id-token";
 	private static final String ACCESS_TOKEN = "access-token";
-	private static final String USER_INFO_STRING;
+	private static final String PERSONAL_ACCESS_TOKEN = "personal-access-token";
+	private static final JSONObject USER_INFO;
 	
 	static {
-		JSONObject claims = new JSONObject();
+		USER_INFO = new JSONObject();
 		JSONArray array = new JSONArray();
 		array.put("345678");
-		claims.put("team", array);
-		USER_INFO_STRING = claims.toString();
+		USER_INFO.put("team", array);
 	}
 	
 	private static final String STS_EXPIRES_ON = "2021-10-21T12:59:59Z";
@@ -150,7 +162,7 @@ public class AuthTest {
 		IdAndAccessToken idAndAccessToken = new IdAndAccessToken(new Token(ID_TOKEN, ""), new Token(ACCESS_TOKEN, ""));
 		when(mockTokenRetriever.getTokens(anyString(), anyString())).thenReturn(idAndAccessToken);
 		
-		this.auth = new Auth(mockStsClient, mockHttpGetExecutor, mockTokenRetriever, mockJWTClaimsExtractor);
+		this.auth = new Auth(mockStsClient, mockHttpGetExecutor, mockTokenRetriever, mockJWTClaimsExtractor, mockSynapseClient);
 	}
 	
 	@After
@@ -493,7 +505,7 @@ public class AuthTest {
 				+ "redirect_uri=https%3A%2F%2Fwww.foo.com%2Fsynapse&claims={\"id_token\":{\"team\":{\"values\":[\"123456\",\"345678\"]},"
 				+ "\"user_name\":{\"essential\":true},\"userid\":{\"essential\":true}},\"userinfo\":"
 				+ "{\"team\":{\"values\":[\"123456\",\"345678\"]},\"user_name\":{\"essential\":true},"
-				+ "\"userid\":{\"essential\":true}}}&state=SC_CONSOLE&scope=openid";
+				+ "\"userid\":{\"essential\":true}}}&state=SC_CONSOLE&scope=openid%20authorize%20";
 		verify(mockHttpResponse).setHeader("Location", expectedRedirURL);
 	}
 	
@@ -514,7 +526,7 @@ public class AuthTest {
 	}
 	
 	@Test
-	public void testDoGet_DownloadSTSToken() throws Exception {
+	public void testDoGet_ReturnSTSToken() throws Exception {
 		mockIncomingUrl("https://www.foo.com", "/synapse");
 		when(mockHttpRequest.getParameter("code")).thenReturn("some-code");
 		when(mockHttpRequest.getParameter("state")).thenReturn(RequestType.STS_TOKEN.name());
@@ -532,7 +544,7 @@ public class AuthTest {
 	}
 	
 	@Test
-	public void testDoGet_DownloadAccessToken() throws Exception {
+	public void testDoGet_ReturnAccessToken() throws Exception {
 		mockIncomingUrl("https://www.foo.com", "/synapse");
 		when(mockHttpRequest.getParameter("code")).thenReturn("some-code");
 		when(mockHttpRequest.getParameter("state")).thenReturn(RequestType.ACCESS_TOKEN.name());
@@ -547,7 +559,7 @@ public class AuthTest {
 	}
 	
 	@Test
-	public void testDoGet_DownloadIdToken() throws Exception {
+	public void testDoGet_ReturnIdToken() throws Exception {
 		mockIncomingUrl("https://www.foo.com", "/synapse");
 		when(mockHttpRequest.getParameter("code")).thenReturn("some-code");
 		when(mockHttpRequest.getParameter("state")).thenReturn(RequestType.ACCESS_TOKEN.name());
@@ -562,15 +574,15 @@ public class AuthTest {
 	}
 	
 	@Test
-	public void testDoGet_DownloadSTSTokenViaWebServiceRequest() throws Exception {
+	public void testDoGet_ReturnSTSTokenViaWebServiceRequest() throws Exception {
 		mockIncomingUrl("https://www.foo.com", "/ststoken");
 		when(mockHttpRequest.getHeader("Authorization")).thenReturn("Bearer access-token");
-		when(mockHttpGetExecutor.executeHttpGet("https://repo-prod.prod.sagebase.org/auth/v1/oauth2/userinfo",
-				"access-token")).thenReturn(USER_INFO_STRING);
+		when(mockSynapseClient.getUserInfoAsJSON()).thenReturn(USER_INFO);
 		
 		// method under test
 		auth.doGet(mockHttpRequest, mockHttpResponse);
 		
+		verify(mockSynapseClient).setBearerAuthorizationToken("access-token");
 		verify(mockOutputStream).write(byteArrayCaptor.capture());
 		JSONObject actual = new JSONObject(new String(byteArrayCaptor.getValue(),Charset.forName("UTF8")));
 		assertEquals("accessKeyId", actual.getString("AccessKeyId"));
@@ -581,17 +593,18 @@ public class AuthTest {
 	}
 	
 	@Test
-	public void testDoGet_DownloadSTSTokenViaWebServiceRequest_Unauthorized() throws Exception {
+	public void testDoGet_ReturnSTSTokenViaWebServiceRequest_Unauthorized() throws Exception {
 		mockIncomingUrl("https://www.foo.com", "/ststoken");
 		when(mockHttpRequest.getHeader("Authorization")).thenReturn("Bearer access-token");
-		when(mockHttpGetExecutor.executeHttpGet("https://repo-prod.prod.sagebase.org/auth/v1/oauth2/userinfo",
-				"access-token")).thenThrow(new HttpException(403, "Forbidden", null));
+		when(mockSynapseClient.getUserInfoAsJSON()).thenThrow(new SynapseForbiddenException("Forbidden"));
 		
 		// method under test
 		auth.doGet(mockHttpRequest, mockHttpResponse);
 		
-		verify(mockOutputStream).println("Error: Forbidden");
-		verify(mockHttpResponse).setContentType("text/plain");
+		verify(mockOutputStream).println("<html><head/><body>\n<h3>An error has occurred:</h3>");
+		verify(mockOutputStream).println("Forbidden");
+		verify(mockOutputStream).println("</body></html>");
+		verify(mockHttpResponse).setContentType("text/html");
 		verify(mockHttpResponse).setStatus(403);
 	}
 	
@@ -604,6 +617,56 @@ public class AuthTest {
 		
 		verify(mockHttpResponse).setStatus(303);
 		verify(mockHttpResponse).setHeader("Location", "https://www.foo.com");
+	}
+	
+	@Test
+	public void testGetPersonalAccessToken() throws Exception {
+		
+		
+		// method under test
+		auth.getPersonalAccessToken("access-token");
+		
+		verify(mockSynapseClient).setBearerAuthorizationToken("access-token");
+		verify(mockSynapseClient).createPersonalAccessToken(accessTokenRequestCaptor.capture());
+		
+		AccessTokenGenerationRequest actual = accessTokenRequestCaptor.getValue();
+		
+		assertEquals("AWS CLI for Service Catalog", actual.getName());
+		List<OAuthScope> expectedScope = new ArrayList<OAuthScope>();
+		expectedScope.add(OAuthScope.openid);
+		expectedScope.add(OAuthScope.authorize);
+		assertEquals(expectedScope, actual.getScope());
+		
+		Map<String, OIDCClaimsRequestDetails> expectedClaims = new HashMap<String, OIDCClaimsRequestDetails>();
+		OIDCClaimsRequestDetails details = new OIDCClaimsRequestDetails();
+		details.setEssential(true);
+		List<String> requestedTeams = new ArrayList<String>();
+		requestedTeams.add("123456");
+		requestedTeams.add("345678");
+		details.setValues(requestedTeams);
+		expectedClaims.put("team", details);
+		details = new OIDCClaimsRequestDetails();
+		details.setEssential(true);
+		expectedClaims.put("userid", details);
+		expectedClaims.put("user_name", details);
+		
+		assertEquals(expectedClaims, actual.getUserInfoClaims());
+	}
+	
+	@Test
+	public void testDoGet_PersonalAccessToken() throws Exception {
+		mockIncomingUrl("https://www.foo.com", "/synapse");
+		when(mockHttpRequest.getParameter("code")).thenReturn("some-code");
+		when(mockHttpRequest.getParameter("state")).thenReturn(RequestType.PERSONAL_ACCESS_TOKEN.name());
+		when(mockSynapseClient.createPersonalAccessToken(any())).thenReturn(PERSONAL_ACCESS_TOKEN);
+
+		// method under test
+		auth.doGet(mockHttpRequest, mockHttpResponse);
+		
+		byte[] expectedBytes = PERSONAL_ACCESS_TOKEN.getBytes(Charset.forName("UTF8"));
+		verify(mockOutputStream).write(expectedBytes);
+		verify(mockHttpResponse).setContentLength(expectedBytes.length);		
+		verify(mockHttpResponse).setContentType("text/plain");
 	}
 	
 }
