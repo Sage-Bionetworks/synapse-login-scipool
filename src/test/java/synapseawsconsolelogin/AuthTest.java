@@ -624,14 +624,14 @@ public class AuthTest {
 		
 		
 		// method under test
-		auth.getPersonalAccessToken("access-token");
+		auth.getPersonalAccessToken("access-token", "stack-name");
 		
 		verify(mockSynapseClient).setBearerAuthorizationToken("access-token");
 		verify(mockSynapseClient).createPersonalAccessToken(accessTokenRequestCaptor.capture());
 		
 		AccessTokenGenerationRequest actual = accessTokenRequestCaptor.getValue();
 		
-		assertEquals("AWS CLI for Service Catalog", actual.getName());
+		assertEquals("AWS CLI access to stack-name", actual.getName());
 		List<OAuthScope> expectedScope = new ArrayList<OAuthScope>();
 		expectedScope.add(OAuthScope.openid);
 		expectedScope.add(OAuthScope.authorize);
