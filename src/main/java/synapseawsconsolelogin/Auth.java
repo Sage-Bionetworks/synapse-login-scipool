@@ -174,7 +174,7 @@ public class Auth extends HttpServlet {
 	
 	private static final String BEARER_PREFIX = "Bearer ";
 	
-	private static final String PERSONAL_ACCESS_TOKEN_NAME = "AWS CLI for Service Catalog";
+	private static final String PERSONAL_ACCESS_TOKEN_NAME = "AWS CLI access to %s";
 	
 	
 	private Map<String,String> teamToRoleMap;
@@ -692,10 +692,10 @@ public class Auth extends HttpServlet {
 		displayResponse(token, "text/plain", resp);
 	}
 	
-	String getPersonalAccessToken(String accessToken) throws SynapseException {
+	String getPersonalAccessToken(String accessToken, String stackName) throws SynapseException {
 		synapseClient.setBearerAuthorizationToken(accessToken);
 		AccessTokenGenerationRequest request = new AccessTokenGenerationRequest();
-		request.setName(PERSONAL_ACCESS_TOKEN_NAME);
+		request.setName(String.format(PERSONAL_ACCESS_TOKEN_NAME, stackName));
 		request.setScope(OAUTH_SCOPES);
 		request.setUserInfoClaims(getUserInfoClaims());
 		return synapseClient.createPersonalAccessToken(request);
@@ -752,7 +752,7 @@ public class Auth extends HttpServlet {
 			returnOidcToken(accessToken, resp);
 			break;
 		case PERSONAL_ACCESS_TOKEN:
-			String pat = getPersonalAccessToken(accessToken);
+			String pat = getPersonalAccessToken(accessToken, getThisEndpoint(req));
 			returnOidcToken(pat, resp);
 			break;
 		default:
