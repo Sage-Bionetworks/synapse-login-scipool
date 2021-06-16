@@ -167,6 +167,13 @@ public class OAuth2Api extends DefaultApi20 {
         	Response response = getTokenResponse(requestToken, verifier);
         	return ((OAuth2Api)api).getIdTokenExtractor().extract(response.getBody());
 	    }
+	    
+	    public IdAndAccessToken getIdAndAccessTokens(Token requestToken, Verifier verifier) {
+        	Response response = getTokenResponse(requestToken, verifier);
+          	Token idToken = ((OAuth2Api)api).getIdTokenExtractor().extract(response.getBody());
+          	Token accessToken = api.getAccessTokenExtractor().extract(response.getBody());
+           	return new IdAndAccessToken(idToken, accessToken);
+	    }
     }
 
 }
