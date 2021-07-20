@@ -10,8 +10,6 @@ import java.io.PrintWriter;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.net.URLConnection;
-import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
@@ -82,14 +80,14 @@ public class Auth extends HttpServlet {
 	private static Logger logger = Logger.getLogger("Auth");
 
 	private static final String TEAM_CLAIM_NAME = "team";
-	
+
 	// templates for constructing the 'claims' part of the OIDC authorization request
 	private static final String CLAIM_TEMPLATE="\"%1$s\":{\"essential\":true}";
 	private static final String CLAIM_TEMPLATE_WITH_VALUES="\"%1$s\":{\"values\":[\"%2$s\"]}";
 	
 	private static final String SYNAPSE_ENDPOINT = "https://repo-prod.prod.sagebase.org/auth/v1";
 	private static final String TOKEN_URL = SYNAPSE_ENDPOINT+"/oauth2/token";
-	
+
 	// we need 'openid' scope to get user claims/info and we need 'authorize' scope to create
 	// a personal access token
 	private static final List<OAuthScope> OAUTH_SCOPES = 
@@ -175,8 +173,17 @@ public class Auth extends HttpServlet {
 	private static final String BEARER_PREFIX = "Bearer ";
 	
 	private static final String PERSONAL_ACCESS_TOKEN_NAME = "AWS CLI access to %s";
-	
-	
+
+	/*
+	 * File name for the AWS config file containing the downloaded STS token
+	 */
+	private static final String STS_TOKEN_FILE_NAME = "ststoken.json";
+
+	/*
+	 * File name for the downloaded OIDC (ID or access) token
+	 */
+	private static final String OIDC_TOKEN_FILE_NAME = "synapse_oidc_token";
+
 	private Map<String,String> teamToRoleMap;
 	private String sessionTimeoutSeconds;
 	private Properties properties = null;
@@ -606,7 +613,7 @@ public class Auth extends HttpServlet {
 	}
 
 	/**
-	 * Create the HTTP response to return the STS token
+	 * Create the HTTP response to download a file containing the STS token
 	 * which will allow the bearer to assume the end-user role. The file is
 	 * in the format of an AWS CLI config file.
 	 * 
@@ -627,8 +634,8 @@ public class Auth extends HttpServlet {
 		sts.put("SessionToken", credentials.getSessionToken());
 		sts.put("Expiration", formatDateAsIso8601(credentials.getExpiration()));
 		sts.put("Version", 1);
-		
-		displayResponse(createSerializedJSON(sts), "application/json", resp);
+
+		writeFileToResponse(createSerializedJSON(sts), STS_TOKEN_FILE_NAME, resp);
 	}
 	
 	/**
@@ -645,27 +652,28 @@ public class Auth extends HttpServlet {
 	}
 	
 	/**
-	 * Create the HTTP response for displaying text in a web page
-	 * 
+	 * Create the HTTP response for downloading a file
+	 *
 	 * @param content the file content
+	 * @param filename the file name
 	 * @param resp the HTTP response to write the result to
-	 * @param contentType
 	 * @throws IOException
 	 */
-	public static void displayResponse(String content, String contentType, HttpServletResponse resp) throws IOException {
-		resp.setStatus(200);		
-		resp.setContentType(contentType);
+	public static void writeFileToResponse(String content, String filename, HttpServletResponse resp) throws IOException {
+		resp.setStatus(200);
+		resp.setContentType("application/force-download");
 		resp.setCharacterEncoding(UTF8);
 		resp.setHeader("Content-Transfer-Encoding", "binary");
 		resp.setHeader("Cache-Control", "no-store, no-cache");
+		resp.setHeader("Content-Disposition","attachment; filename=\""+filename+"\"");
 		byte[] bytes = content.getBytes(UTF8);
 		resp.setContentLength(bytes.length);
 		try (ServletOutputStream os = resp.getOutputStream()) {
 			os.write(bytes);
-			os.flush();	
+			os.flush();
 		}
 	}
-	
+
 	/**
 	 * Extract the bearer authorization token from an HTTP request
 	 * @param req
@@ -683,13 +691,13 @@ public class Auth extends HttpServlet {
 	}
 		
 	/**
-	 * Create the HTTP response that displays a token
+	 * Create the HTTP response that writes a token to a file
 	 * @param token
 	 * @param resp
 	 * @throws IOException
 	 */
 	void returnOidcToken(String token, HttpServletResponse resp) throws IOException {
-		displayResponse(token, "text/plain", resp);
+		writeFileToResponse(token, OIDC_TOKEN_FILE_NAME, resp);
 	}
 	
 	String getPersonalAccessToken(String accessToken, String stackName) throws SynapseException {

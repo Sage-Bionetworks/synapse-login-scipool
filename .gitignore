@@ -30,6 +30,7 @@ hs_err_pid*
 
 # jetbrains
 .idea/
+*.iml
 
 # maven
 target/
@@ -42,3 +43,4 @@ target/
 
 # temp
 temp/
+
