@@ -424,10 +424,10 @@ public class AuthTest {
 		byte[] expectedBytes = expectedContent.getBytes(Charset.forName("UTF8"));
 		
 		// method under test
-		Auth.displayResponse(expectedContent, "text/plain", mockHttpResponse);
-		
+		Auth.writeFileToResponse(expectedContent, "file.txt", mockHttpResponse);
+
 		verify(mockHttpResponse).setStatus(200);
-		verify(mockHttpResponse).setContentType("text/plain");
+		verify(mockHttpResponse).setContentType("application/force-download");
 		verify(mockHttpResponse).setCharacterEncoding("utf-8");
 		verify(mockHttpResponse).setHeader("Content-Transfer-Encoding", "binary");
 		verify(mockHttpResponse).setHeader("Cache-Control", "no-store, no-cache");
@@ -455,9 +455,9 @@ public class AuthTest {
 		assertEquals("sessionToken", actual.getString("SessionToken"));
 		assertEquals(1, actual.getInt("Version"));
 		assertEquals(STS_EXPIRES_ON, actual.getString("Expiration"));
-		
-		verify(mockHttpResponse).setContentType("application/json");
-		verify(mockHttpResponse).setContentLength(byteArrayCaptor.getValue().length);		
+
+		verify(mockHttpResponse).setContentType("application/force-download");
+		verify(mockHttpResponse).setContentLength(byteArrayCaptor.getValue().length);
 	}
 	
 	@Test
@@ -478,8 +478,8 @@ public class AuthTest {
 		
 		// method under test
 		auth.returnOidcToken(expectedContent, mockHttpResponse);
-		
-		verify(mockHttpResponse).setContentType("text/plain");
+
+		verify(mockHttpResponse).setContentType("application/force-download");
 		verify(mockOutputStream).write(expectedBytes);
 		verify(mockHttpResponse).setContentLength(expectedBytes.length);		
 	}
@@ -540,7 +540,7 @@ public class AuthTest {
 		assertEquals("secretAccessKey", actual.getString("SecretAccessKey"));
 		assertEquals("sessionToken", actual.getString("SessionToken"));
 		verify(mockHttpResponse).setContentLength(byteArrayCaptor.getValue().length);
-		verify(mockHttpResponse).setContentType("application/json");
+		verify(mockHttpResponse).setContentType("application/force-download");
 	}
 	
 	@Test
@@ -554,8 +554,8 @@ public class AuthTest {
 		
 		byte[] expectedBytes = ACCESS_TOKEN.getBytes(Charset.forName("UTF8"));
 		verify(mockOutputStream).write(expectedBytes);
-		verify(mockHttpResponse).setContentLength(expectedBytes.length);		
-		verify(mockHttpResponse).setContentType("text/plain");
+		verify(mockHttpResponse).setContentLength(expectedBytes.length);
+		verify(mockHttpResponse).setContentType("application/force-download");
 	}
 	
 	@Test
@@ -569,8 +569,8 @@ public class AuthTest {
 		
 		byte[] expectedBytes = ACCESS_TOKEN.getBytes(Charset.forName("UTF8"));
 		verify(mockOutputStream).write(expectedBytes);
-		verify(mockHttpResponse).setContentLength(expectedBytes.length);		
-		verify(mockHttpResponse).setContentType("text/plain");
+		verify(mockHttpResponse).setContentLength(expectedBytes.length);
+		verify(mockHttpResponse).setContentType("application/force-download");
 	}
 	
 	@Test
@@ -588,8 +588,8 @@ public class AuthTest {
 		assertEquals("accessKeyId", actual.getString("AccessKeyId"));
 		assertEquals("secretAccessKey", actual.getString("SecretAccessKey"));
 		assertEquals("sessionToken", actual.getString("SessionToken"));
-		verify(mockHttpResponse).setContentLength(byteArrayCaptor.getValue().length);		
-		verify(mockHttpResponse).setContentType("application/json");
+		verify(mockHttpResponse).setContentLength(byteArrayCaptor.getValue().length);
+		verify(mockHttpResponse).setContentType("application/force-download");
 	}
 	
 	@Test
@@ -665,8 +665,8 @@ public class AuthTest {
 		
 		byte[] expectedBytes = PERSONAL_ACCESS_TOKEN.getBytes(Charset.forName("UTF8"));
 		verify(mockOutputStream).write(expectedBytes);
-		verify(mockHttpResponse).setContentLength(expectedBytes.length);		
-		verify(mockHttpResponse).setContentType("text/plain");
+		verify(mockHttpResponse).setContentLength(expectedBytes.length);
+		verify(mockHttpResponse).setContentType("application/force-download");
 	}
 	
 }
