@@ -7,8 +7,8 @@ cache:
   directories:
   - $HOME/.m2
 before_install:
-  - pyenv update
-  - pyenv global 3.8.0
+  - pyenv install 3.8.10
+  - pyenv global 3.8.10
   - pip install --upgrade pip
 install:
   - pip install pre-commit travis-wait-improved awsebcli
