@@ -11,15 +11,12 @@ addons:
     packages:
       - python3.8
 before_install:
-#  - eval "$(pyenv init -)"
-#  - pyenv install 3.8.10
-#  - pyenv global 3.8.10
   - sudo apt-get update
   - sudo apt purge python2.7-minimal
   - sudo apt-get install python3 python3-pip python3-setuptools
-  - pip3 install --upgrade pip
+  - pip install --upgrade pip
 install:
-  - pip3 install pre-commit travis-wait-improved awsebcli
+  - pip install pre-commit travis-wait-improved awsebcli
 stages:
   - name: test
   - name: deploy-develop
