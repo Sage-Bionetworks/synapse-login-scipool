@@ -1,3 +1,4 @@
+dist: bionic
 language:
  - java
 jdk:
@@ -5,11 +6,17 @@ jdk:
 cache:
   directories:
   - $HOME/.m2
+addons:
+  apt:
+    packages:
+      - python3.8
 before_install:
-  - pyenv global 3.7.1
-  - pip install --upgrade pip
+  - sudo apt-get update
+  - sudo apt purge python2.7-minimal
+  - sudo apt-get install python3 python3-pip python3-setuptools
+  - pip3 install --upgrade pip
 install:
-  - pip install pre-commit travis-wait-improved awsebcli
+  - pip3 install pre-commit travis-wait-improved awsebcli
 stages:
   - name: test
   - name: deploy-develop
