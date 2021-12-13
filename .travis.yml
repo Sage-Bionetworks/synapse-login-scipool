@@ -9,7 +9,7 @@ before_install:
   - pyenv global 3.7.1
   - pip install --upgrade pip
 install:
-  - pip install pre-commit travis-wait-improved awsebcli
+  - pip install pre-commit travis-wait-improved awsebcli~=3.19
 stages:
   - name: test
   - name: deploy-develop
