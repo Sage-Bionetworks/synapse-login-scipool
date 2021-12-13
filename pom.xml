@@ -16,7 +16,6 @@
 		<maven.compiler.target>1.8</maven.compiler.target>
 		<maven.compiler.source>1.8</maven.compiler.source>
 		<synapseVersion>386.0-5-g21f7882</synapseVersion>
-		<log4j.version>2.15.0</log4j.version>
 	</properties>
 
 	<repositories>
