@@ -1,14 +1,14 @@
 dist: focal
 language: java
-jdk: openjdk8
+#jdk: openjdk8
 cache:
   directories:
     - $HOME/.m2
     - $HOME/.cache/pip
-addons:
-  apt:
-    packages:
-      - python3.8
+#addons:
+#  apt:
+#    packages:
+#      - python3.8
 branches:
   only:
     - develop
@@ -44,7 +44,7 @@ jobs:
     - stage: eb-deploy-scipooldev
       if: (NOT type IN (pull_request)) AND (branch = develop)
       script:
-        - jdk_switcher use openjdk8
+#        - jdk_switcher use openjdk8
         - mvn clean package
         - eb deploy --profile develop --verbose --region ${AWS_REGION} --staged --timeout 30 synapse-login-scipooldev
     - stage: eb-deploy-scipoolprod
@@ -56,12 +56,12 @@ jobs:
     - stage: eb-deploy-strides
       if: (NOT type IN (pull_request)) AND (branch = prod)
       script:
-        - jdk_switcher use openjdk8
+#        - jdk_switcher use openjdk8
         - mvn clean package
         - eb deploy --profile prod --verbose --region ${AWS_REGION} --staged --timeout 30 synapse-login-strides
     - stage: eb-deploy-bmgfki
       if: (NOT type IN (pull_request)) AND (branch = prod)
       script:
-        - jdk_switcher use openjdk8
+#        - jdk_switcher use openjdk8
         - mvn clean package
         - eb deploy --profile prod --verbose --region ${AWS_REGION} --staged --timeout 30 synapse-login-bmgfki
