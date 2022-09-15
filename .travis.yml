@@ -1,62 +1,67 @@
-dist: bionic
-language:
- - java
-jdk:
-  - openjdk8
+dist: focal
+language: java
+#jdk: openjdk8
 cache:
   directories:
-  - $HOME/.m2
-addons:
-  apt:
-    packages:
-      - python3.8
-before_install:
-  - sudo apt-get update
-  - sudo apt purge python2.7-minimal
-  - sudo apt-get install python3 python3-pip python3-setuptools
-  - pip3 install --upgrade pip
+    - $HOME/.m2
+    - $HOME/.cache/pip
+#addons:
+#  apt:
+#    packages:
+#      - python3.8
+branches:
+  only:
+    - develop
+    - prod
+env:
+  global:
+    - REPO_NAME="${PWD##*/}"
+    - AWS_REGION="us-east-1"
 install:
-  - pip3 install pre-commit travis-wait-improved awsebcli
+  # install awscli v2
+  - curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+  - unzip awscliv2.zip && sudo ./aws/install
+  # install other tools
+  - pip install travis-wait-improved awsebcli
+before_script:
+  # Setup AWS CLI profile for multiple AWS accounts
+  - mkdir -p ~/.aws
+  - echo -e "[profile develop]\nsource_profile=ci-user-develop\nrole_arn=${AwsCfServiceRoleArn_develop}\n" > ~/.aws/config
+  - echo -e "[ci-user-develop]\naws_access_key_id=${AwsTravisAccessKey_develop}\naws_secret_access_key=${AwsTravisSecretAccessKey_develop}\n" > ~/.aws/credentials
+  - echo -e "[profile prod]\nsource_profile=ci-user-prod\nrole_arn=${AwsCfServiceRoleArn_prod}\n" >> ~/.aws/config
+  - echo -e "[ci-user-prod]\naws_access_key_id=${AwsTravisAccessKey_prod}\naws_secret_access_key=${AwsTravisSecretAccessKey_prod}\n" >> ~/.aws/credentials
 stages:
   - name: test
-  - name: deploy-develop
-    if: type = push AND branch = develop
-  - name: deploy-prod
-    if: type = push AND branch = prod
+  - name: eb-deploy-scipooldev
+  - name: eb-deploy-scipoolprod
+  - name: eb-deploy-strides
+  - name: eb-deploy-bmgfki
 jobs:
+  fast_finish: true
   include:
     - stage: test
+      script: mvn clean package
+    - stage: eb-deploy-scipooldev
+      if: (NOT type IN (pull_request)) AND (branch = develop)
       script:
+#        - jdk_switcher use openjdk8
         - mvn clean package
-    - stage: deploy-develop
-      name: "org-sagebase-scipooldev"
+        - eb deploy --profile develop --verbose --region ${AWS_REGION} --staged --timeout 30 synapse-login-scipooldev
+    - stage: eb-deploy-scipoolprod
+      if: (NOT type IN (pull_request)) AND (branch = prod)
       script:
-        - mkdir -p ~/.aws
-        - echo -e "[default]\nregion=us-east-1\nsource_profile=default\nrole_arn=$AwsCfServiceRoleArn_develop" > ~/.aws/config
-        - echo -e "[default]\nregion=us-east-1\naws_access_key_id=$AwsTravisAccessKey_develop\naws_secret_access_key=$AwsTravisSecretAccessKey_develop" > ~/.aws/credentials
+        - jdk_switcher use openjdk8
         - mvn clean package
-        - travis-wait-improved --timeout 30m eb deploy synapse-login-scipooldev --profile default --region us-east-1 --verbose
-    - stage: deploy-prod
-      name: "org-sagebase-scipoolprod"
+        - eb deploy --profile prod --verbose --region ${AWS_REGION} --staged --timeout 30 synapse-login-scipoolprod
+    - stage: eb-deploy-strides
+      if: (NOT type IN (pull_request)) AND (branch = prod)
       script:
-        - mkdir -p ~/.aws
-        - echo -e "[default]\nregion=us-east-1\nsource_profile=default\nrole_arn=$AwsCfServiceRoleArn_prod" > ~/.aws/config
-        - echo -e "[default]\nregion=us-east-1\naws_access_key_id=$AwsTravisAccessKey_prod\naws_secret_access_key=$AwsTravisSecretAccessKey_prod" > ~/.aws/credentials
+#        - jdk_switcher use openjdk8
         - mvn clean package
-        - travis-wait-improved --timeout 30m eb deploy synapse-login-scipoolprod --profile default --region us-east-1 --verbose
-    - stage: deploy-prod
-      name: "org-sagebase-strides"
+        - eb deploy --profile prod --verbose --region ${AWS_REGION} --staged --timeout 30 synapse-login-strides
+    - stage: eb-deploy-bmgfki
+      if: (NOT type IN (pull_request)) AND (branch = prod)
       script:
-        - mkdir -p ~/.aws
-        - echo -e "[default]\nregion=us-east-1\nsource_profile=default\nrole_arn=$AwsCfServiceRoleArn_strides" > ~/.aws/config
-        - echo -e "[default]\nregion=us-east-1\naws_access_key_id=$AwsTravisAccessKey_strides\naws_secret_access_key=$AwsTravisSecretAccessKey_strides" > ~/.aws/credentials
+#        - jdk_switcher use openjdk8
         - mvn clean package
-        - travis-wait-improved --timeout 30m eb deploy synapse-login-strides --profile default --region us-east-1 --verbose
-    - stage: deploy-prod
-      name: "org-sagebase-bmgfki"
-      script:
-        - mkdir -p ~/.aws
-        - echo -e "[default]\nregion=us-east-1\nsource_profile=default\nrole_arn=$AwsCfServiceRoleArn_bmgfki" > ~/.aws/config
-        - echo -e "[default]\nregion=us-east-1\naws_access_key_id=$AwsTravisAccessKey_bmgfki\naws_secret_access_key=$AwsTravisSecretAccessKey_bmgfki" > ~/.aws/credentials
-        - mvn clean package
-        - travis-wait-improved --timeout 30m eb deploy synapse-login-bmgfki --profile default --region us-east-1 --verbose
+        - eb deploy --profile prod --verbose --region ${AWS_REGION} --staged --timeout 30 synapse-login-bmgfki
