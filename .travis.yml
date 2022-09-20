@@ -25,6 +25,10 @@ before_script:
   - echo -e "[ci-user-develop]\naws_access_key_id=${AwsTravisAccessKey_develop}\naws_secret_access_key=${AwsTravisSecretAccessKey_develop}\n" > ~/.aws/credentials
   - echo -e "[profile prod]\nsource_profile=ci-user-prod\nrole_arn=${AwsCfServiceRoleArn_prod}\n" >> ~/.aws/config
   - echo -e "[ci-user-prod]\naws_access_key_id=${AwsTravisAccessKey_prod}\naws_secret_access_key=${AwsTravisSecretAccessKey_prod}\n" >> ~/.aws/credentials
+  - echo -e "[profile strides]\nsource_profile=ci-user-strides\nrole_arn=${AwsCfServiceRoleArn_strides}\n" >> ~/.aws/config
+  - echo -e "[ci-user-strides]\naws_access_key_id=${AwsTravisAccessKey_strides}\naws_secret_access_key=${AwsTravisSecretAccessKey_strides}\n" >> ~/.aws/credentials
+  - echo -e "[profile bmgfki]\nsource_profile=ci-user-bmgfki\nrole_arn=${AwsCfServiceRoleArn_bmgfki}\n" >> ~/.aws/config
+  - echo -e "[ci-user-bmgfki]\naws_access_key_id=${AwsTravisAccessKey_bmgfki}\naws_secret_access_key=${AwsTravisSecretAccessKey_bmgfki}\n" >> ~/.aws/credentials
 stages:
   - name: test
   - name: eb-deploy-scipooldev
@@ -50,9 +54,9 @@ jobs:
       if: (NOT type IN (pull_request)) AND (branch = prod)
       script:
         - mvn clean package
-        - eb deploy --profile prod --verbose --region ${AWS_REGION} --staged --timeout 30 synapse-login-strides
+        - eb deploy --profile strides --verbose --region ${AWS_REGION} --staged --timeout 30 synapse-login-strides
     - stage: eb-deploy-bmgfki
       if: (NOT type IN (pull_request)) AND (branch = prod)
       script:
         - mvn clean package
-        - eb deploy --profile prod --verbose --region ${AWS_REGION} --staged --timeout 30 synapse-login-bmgfki
+        - eb deploy --profile bmgfki --verbose --region ${AWS_REGION} --staged --timeout 30 synapse-login-bmgfki
