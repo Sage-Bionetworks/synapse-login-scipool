@@ -1,0 +1,44 @@
+# reusable template for running Sceptre deployments to AWS accounts
+name: aws-deploy
+
+on:
+  workflow_call:
+    inputs:
+      aws-region:
+        type: string
+        default: us-east-1
+      role-to-assume:
+        required: true
+        type: string
+      role-duration-seconds:
+        type: number
+        default: 1800
+      ebcli-command:
+        type: string
+
+jobs:
+  deploy:
+    permissions:
+      id-token: write
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-java@v3
+        with:
+          distribution: 'corretto'
+          java-version: '17'
+          cache: 'maven'
+      - name: Build with Maven
+        run: mvn clean package
+      - name: Assume AWS Role
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-region: ${{ inputs.aws-region }}
+          role-to-assume: ${{ inputs.role-to-assume }}
+          role-session-name: GHA-${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.run_id }}
+          role-duration-seconds: ${{ inputs.role-duration-seconds }}
+      - name: Deploy
+        uses: hmanzur/actions-aws-eb@v1.0.0
+        with:
+          command:  ${{ inputs.ebcli-command }}
