@@ -1,4 +1,4 @@
-# reusable template for running Sceptre deployments to AWS accounts
+# reusable template for running Elastic Beanstalk deployments to AWS accounts
 name: aws-deploy
 
 on:
