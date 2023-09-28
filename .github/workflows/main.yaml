@@ -11,4 +11,4 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - uses: sparkplug-app/install-eb-cli-action
+      - uses: sparkplug-app/install-eb-cli-action@v1.1.1
