@@ -24,25 +24,25 @@ jobs:
     uses: "./.github/workflows/aws-deploy.yaml"
     with:
       role-to-assume: "arn:aws:iam::465877038949:role/sagebase-github-oidc-scipool-dev-synapse-login-aws-infra"
-      ebcli-command: "deploy --verbose --staged --timeout 30 synapse-login-scipooldev"
+      ebcli-command: "eb deploy --verbose --staged --timeout 30m synapse-login-scipooldev"
   deploy-scipoolprod:
     if: github.ref == 'refs/heads/prod'
     needs: [test]
     uses: "./.github/workflows/aws-deploy.yaml"
     with:
       role-to-assume: "arn:aws:iam::237179673806:role/sagebase-github-oidc-scipool-prod-synapse-login-aws-infra"
-      ebcli-command: "deploy --verbose --staged --timeout 30 synapse-login-scipoolprod"
+      ebcli-command: "eb deploy --verbose --staged --timeout 30m synapse-login-scipoolprod"
   deploy-bmgfki:
     if: github.ref == 'refs/heads/prod'
     needs: [test]
     uses: "./.github/workflows/aws-deploy.yaml"
     with:
       role-to-assume: "arn:aws:iam::464102568320:role/sagebase-github-oidc-scipool-prod-synapse-login-aws-infra"
-      ebcli-command: "deploy --verbose --staged --timeout 30 synapse-login-bmgfki"
+      ebcli-command: "eb deploy --verbose --staged --timeout 30m synapse-login-bmgfki"
   deploy-strides:
     if: github.ref == 'refs/heads/prod'
     needs: [test]
     uses: "./.github/workflows/aws-deploy.yaml"
     with:
       role-to-assume: "arn:aws:iam::423819316185:role/github-oidc-sage-bionetworks"
-      ebcli-command: "deploy --verbose --staged --timeout 30 synapse-login-strides"
+      ebcli-command: "eb deploy --verbose --staged --timeout 30m synapse-login-strides"
