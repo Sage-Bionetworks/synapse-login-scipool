@@ -1,0 +1,48 @@
+name: main
+
+on:
+  pull_request:
+    branches: ['*']
+  push:
+    branches: ['*']
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-java@v3
+        with:
+          distribution: 'corretto'
+          java-version: '17'
+          cache: 'maven'
+      - name: Build with Maven
+        run: mvn clean package
+  deploy-scipooldev:
+    if: github.ref == 'refs/heads/develop'
+    needs: [test]
+    uses: "./.github/workflows/aws-deploy.yaml"
+    with:
+      role-to-assume: "arn:aws:iam::465877038949:role/sagebase-github-oidc-scipool-dev-synapse-login-aws-infra"
+      ebcli-command: "deploy --verbose --staged --timeout 30 synapse-login-scipooldev"
+  deploy-scipoolprod:
+    if: github.ref == 'refs/heads/prod'
+    needs: [test]
+    uses: "./.github/workflows/aws-deploy.yaml"
+    with:
+      role-to-assume: "arn:aws:iam::237179673806:role/sagebase-github-oidc-scipool-prod-synapse-login-aws-infra"
+      ebcli-command: "deploy --verbose --staged --timeout 30 synapse-login-scipoolprod"
+  deploy-bmgfki:
+    if: github.ref == 'refs/heads/prod'
+    needs: [test]
+    uses: "./.github/workflows/aws-deploy.yaml"
+    with:
+      role-to-assume: "arn:aws:iam::464102568320:role/sagebase-github-oidc-scipool-prod-synapse-login-aws-infra"
+      ebcli-command: "deploy --verbose --staged --timeout 30 synapse-login-bmgfki"
+  deploy-strides:
+    if: github.ref == 'refs/heads/prod'
+    needs: [test]
+    uses: "./.github/workflows/aws-deploy.yaml"
+    with:
+      role-to-assume: "arn:aws:iam::423819316185:role/github-oidc-sage-bionetworks"
+      ebcli-command: "deploy --verbose --staged --timeout 30 synapse-login-strides"
