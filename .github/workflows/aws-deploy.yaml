@@ -39,5 +39,7 @@ jobs:
           role-session-name: GHA-${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.run_id }}
           role-duration-seconds: ${{ inputs.role-duration-seconds }}
       - uses: sparkplug-app/install-eb-cli-action
+        with:
+          version: 3.19.4
       - name: Deploy to Beanstalk
         run: ${{ inputs.ebcli-command }}
