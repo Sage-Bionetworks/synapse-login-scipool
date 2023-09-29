@@ -40,7 +40,7 @@ jobs:
           role-session-name: GHA-${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.run_id }}
           role-duration-seconds: ${{ inputs.role-duration-seconds }}
       - name: Install EB CLI
-        uses: "./.github/workflows/install-eb-cli.yaml"
+        uses: "./.github/actions/install-eb-cli"
         with:
           version: 3.19.4
           python-version: 3.8
