@@ -1,0 +1,41 @@
+# This script is copied from https://github.com/sparkplug-app/install-eb-cli-action to allow us
+# to use a customize EB CLI install to work around issue https://github.com/aws/aws-elastic-beanstalk-cli-setup/issues/148
+# This allows us to use a specific version of python with a specific version of the EB CLI
+name: Install EB CLI
+description: Installs the Elastic Beanstalk CLI to the GitHub Actions runner
+inputs:
+  version:
+    description: Version of the EB CLI that will be installed (such as 3.20.3).  Will default to latest if not specified.
+    required: false
+  python-version:
+    description: Version of python for the EB CLI
+    required: false
+    default: 3.x
+    type: string
+runs:
+  using: 'composite'
+  steps:
+    - uses: actions/checkout@v3
+      with:
+        repository: 'aws/aws-elastic-beanstalk-cli-setup'
+        path: 'aws-elastic-beanstalk-cli-setup'
+        branch: 'master'
+    - uses: actions/setup-python@v2
+      with:
+        python-version: ${{inputs.python-version}}
+
+    - run: pipx install virtualenv
+      shell: bash
+
+    - name: Install latest EB CLI version
+      if: "${{ inputs.version == '' }}"
+      run: python $GITHUB_WORKSPACE/aws-elastic-beanstalk-cli-setup/scripts/ebcli_installer.py
+      shell: bash
+
+    - name: Install specific EB CLI version
+      if: "${{ inputs.version != '' }}"
+      run: python $GITHUB_WORKSPACE/aws-elastic-beanstalk-cli-setup/scripts/ebcli_installer.py --version ${{ inputs.version }}
+      shell: bash
+
+    - run: echo "~/.ebcli-virtual-env/executables" >> $GITHUB_PATH
+      shell: bash
