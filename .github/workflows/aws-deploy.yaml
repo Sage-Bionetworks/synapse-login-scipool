@@ -40,6 +40,6 @@ jobs:
           role-session-name: GHA-${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.run_id }}
           role-duration-seconds: ${{ inputs.role-duration-seconds }}
       - name: Install EB CLI
-        uses: "./.github/actions/install-eb-cli"
+        uses: pip install PyYAML==5.3.1 awsebcli
       - name: Deploy to Beanstalk
         run: ${{ inputs.ebcli-command }}
