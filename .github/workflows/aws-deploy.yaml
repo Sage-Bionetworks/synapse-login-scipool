@@ -41,8 +41,5 @@ jobs:
           role-duration-seconds: ${{ inputs.role-duration-seconds }}
       - name: Install EB CLI
         uses: "./.github/actions/install-eb-cli"
-        with:
-          version: 3.19.4
-          python-version: 3.7
       - name: Deploy to Beanstalk
         run: ${{ inputs.ebcli-command }}
