@@ -24,7 +24,7 @@ runs:
       with:
         python-version: ${{inputs.python-version}}
 
-    - run: pipx install virtualenv
+    - run: pipx install virtualenv PyYAML==5.3.1
       shell: bash
 
     - name: Install latest EB CLI version
