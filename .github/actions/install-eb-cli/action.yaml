@@ -24,7 +24,11 @@ runs:
       with:
         python-version: ${{inputs.python-version}}
 
-    - run: pipx install virtualenv PyYAML==5.3.1
+    - run: pipx install virtualenv
+      shell: bash
+
+    # workaround https://github.com/aws/aws-elastic-beanstalk-cli-setup/issues/148#issuecomment-1647061226
+    - run: pipx install PyYAML==5.3.1
       shell: bash
 
     - name: Install latest EB CLI version
