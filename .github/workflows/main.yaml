@@ -18,6 +18,8 @@ jobs:
           cache: 'maven'
       - name: Build with Maven
         run: mvn clean package
+
+  # Deploy with EB CLI using work around https://stackoverflow.com/a/53364728
   deploy-scipooldev:
     if: github.ref == 'refs/heads/develop'
     needs: [test]
