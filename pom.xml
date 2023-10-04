@@ -15,7 +15,7 @@
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<maven.compiler.target>1.8</maven.compiler.target>
 		<maven.compiler.source>1.8</maven.compiler.source>
-		<synapseVersion>388.0</synapseVersion>
+		<synapseVersion>446.0</synapseVersion>
 	</properties>
 
 	<repositories>
@@ -70,7 +70,7 @@
 		<dependency>
 			<groupId>org.json</groupId>
 			<artifactId>json</artifactId>
-			<version>20180813</version>
+			<version>20230227</version>
 		</dependency>
 
 		<!-- http://mvnrepository.com/artifact/commons-io/commons-io -->

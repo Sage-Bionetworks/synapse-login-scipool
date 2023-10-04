@@ -106,7 +106,7 @@ eb deploy synapse-login-scipooldev --profile my-aws --region us-east-1
 ```
 
 ## Continuous Integration
-We have configured Travis CI to automatically build, test and deploy the application.
+We have configured Github Action CI to automatically build, test and deploy the application.
 
 ## Contributions
 Contributions are welcome
@@ -129,7 +129,3 @@ prod branch
 
 ## Issues
 * https://sagebionetworks.jira.com/projects/SC
-
-## Builds
-* https://travis-ci.org/Sage-Bionetworks/synapse-login-scipoolprod
-
