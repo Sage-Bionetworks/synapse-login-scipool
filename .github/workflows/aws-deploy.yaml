@@ -39,6 +39,9 @@ jobs:
           role-to-assume: ${{ inputs.role-to-assume }}
           role-session-name: GHA-${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.run_id }}
           role-duration-seconds: ${{ inputs.role-duration-seconds }}
-      - uses: sparkplug-app/install-eb-cli-action@v1.1.1
+      # Install EB CLI from pypi instead of https://github.com/aws/aws-elastic-beanstalk-cli-setup
+      # due to issue https://github.com/aws/aws-elastic-beanstalk-cli-setup/issues/148
+      - name: Install EB CLI
+        run: pip install PyYAML==5.3.1 awsebcli
       - name: Deploy to Beanstalk
         run: ${{ inputs.ebcli-command }}
