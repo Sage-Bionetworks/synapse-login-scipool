@@ -79,6 +79,9 @@ import io.jsonwebtoken.lang.Collections;
 public class Auth extends HttpServlet {
 	private static Logger logger = Logger.getLogger("Auth");
 
+	private static final String StrictTransportSecurityHeaderName = "Strict-Transport-Security";
+	private static final String StrictTransportSecurityHeaderValue = "max-age=31536000; includeSubDomains";
+
 	private static final String TEAM_CLAIM_NAME = "team";
 
 	// templates for constructing the 'claims' part of the OIDC authorization request
@@ -368,6 +371,9 @@ public class Auth extends HttpServlet {
 	@Override
 	public void doPost(HttpServletRequest req, HttpServletResponse resp)
 			throws IOException {
+		if (req.isSecure()) {
+			resp.setHeader(StrictTransportSecurityHeaderName, StrictTransportSecurityHeaderValue);
+		}
 		resp.setContentType("text/plain");
 		try (ServletOutputStream os=resp.getOutputStream()) {
 			os.println("Not found.");
@@ -405,11 +411,14 @@ public class Auth extends HttpServlet {
 		// and we don't expect others. For the rest we'll just return 500.
 		return 500;
 	}
-
+	
 	@Override
 	public void doGet(HttpServletRequest req, HttpServletResponse resp)
 			throws IOException {
 		try {
+			if (req.isSecure()) {
+				resp.setHeader(StrictTransportSecurityHeaderName, StrictTransportSecurityHeaderValue);
+			}
 			doGetIntern(req, resp);
 		} catch (Exception e) {
 			handleException(e, resp);
