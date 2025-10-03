@@ -5,9 +5,10 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
-import static org.mockito.Matchers.any;
-import static org.mockito.Matchers.anyString;
-import static org.mockito.Matchers.eq;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -668,5 +669,58 @@ public class AuthTest {
 		verify(mockHttpResponse).setContentLength(expectedBytes.length);
 		verify(mockHttpResponse).setContentType("application/force-download");
 	}
+	
+	private static void hstsIsSet(HttpServletResponse mockHttpResponse) {
+		verify(mockHttpResponse).setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");		
+	}
+	
+	private static void hstsIsNOTSet(HttpServletResponse mockHttpResponse) {
+		verify(mockHttpResponse, never()).setHeader(eq("Strict-Transport-Security"), anyString());		
+	}
+	
+	@Test
+	public void testHSTSSecureGet() throws Exception {
+		mockIncomingUrl("https://www.foo.com", "/unknown");
+		when (mockHttpRequest.isSecure()).thenReturn(true);
+
+		// method under test
+		auth.doGet(mockHttpRequest, mockHttpResponse);
+		
+		hstsIsSet(mockHttpResponse);
+	}
+	
+	@Test
+	public void testHSTSSecurePost() throws Exception {
+		mockIncomingUrl("https://www.foo.com", "/unknown");
+		when (mockHttpRequest.isSecure()).thenReturn(true);
+
+		// method under test
+		auth.doPost(mockHttpRequest, mockHttpResponse);
+		
+		hstsIsSet(mockHttpResponse);
+	}
+	
+	@Test
+	public void testHSTSInsecureGet() throws Exception {
+		mockIncomingUrl("http://www.foo.com", "/unknown");
+		when (mockHttpRequest.isSecure()).thenReturn(false);
+
+		// method under test
+		auth.doGet(mockHttpRequest, mockHttpResponse);
+		
+		hstsIsNOTSet(mockHttpResponse);
+	}
+	
+	@Test
+	public void testHSTSInsecurePost() throws Exception {
+		mockIncomingUrl("http://www.foo.com", "/unknown");
+		when (mockHttpRequest.isSecure()).thenReturn(false);
+
+		// method under test
+		auth.doPost(mockHttpRequest, mockHttpResponse);
+		
+		hstsIsNOTSet(mockHttpResponse);
+	}
+	
 	
 }
