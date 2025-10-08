@@ -34,13 +34,6 @@ jobs:
     with:
       role-to-assume: "arn:aws:iam::237179673806:role/sagebase-github-oidc-scipool-prod-synapse-login-aws-infra"
       ebcli-command: "eb deploy --region us-east-1 --verbose --staged --timeout 30 synapse-login-scipoolprod"
-  deploy-bmgfki:
-    if: github.ref == 'refs/heads/prod'
-    needs: [test]
-    uses: "./.github/workflows/aws-deploy.yaml"
-    with:
-      role-to-assume: "arn:aws:iam::464102568320:role/sagebase-github-oidc-scipool-prod-synapse-login-aws-infra"
-      ebcli-command: "eb deploy --region us-east-1 --verbose --staged --timeout 30 synapse-login-bmgfki"
   deploy-strides:
     if: github.ref == 'refs/heads/prod'
     needs: [test]
