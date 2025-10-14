@@ -73,7 +73,6 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Header;
 import io.jsonwebtoken.Jwt;
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.lang.Collections;
 
 
 public class Auth extends HttpServlet {
@@ -94,7 +93,7 @@ public class Auth extends HttpServlet {
 	// we need 'openid' scope to get user claims/info and we need 'authorize' scope to create
 	// a personal access token
 	private static final List<OAuthScope> OAUTH_SCOPES = 
-			Collections.arrayToList(new OAuthScope[] {OAuthScope.openid, OAuthScope.authorize});
+			java.util.Arrays.asList(new OAuthScope[] {OAuthScope.openid, OAuthScope.authorize});
 	private static final String SPACE_SEPARATED_SCOPES;
 	
 	static {
@@ -351,7 +350,7 @@ public class Auth extends HttpServlet {
 		for (Map.Entry<String,OIDCClaimsRequestDetails> entry : getUserInfoClaims().entrySet()) {
 			String claimName = entry.getKey();
 			if (first) first=false; else sb.append(",");
-			if (Collections.isEmpty(entry.getValue().getValues())) {
+			if (entry.getValue().getValues() == null || entry.getValue().getValues().isEmpty()) {
 				sb.append(String.format(CLAIM_TEMPLATE, claimName));				
 			} else {
 				teams = entry.getValue().getValues();
