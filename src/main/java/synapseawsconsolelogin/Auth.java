@@ -930,8 +930,8 @@ public class Auth extends HttpServlet {
 		if (name.length()<1) {
 			throw new IllegalArgumentException("SSM parameter name cannot be empty.");
 		}
-		try (DefaultCredentialsProvider credentialsProvider = DefaultCredentialsProvider.create()) {
-			credentialsProvider.resolveCredentials();
+		try {
+			DefaultCredentialsProvider.create().resolveCredentials();
 		} catch (SdkClientException e) {
 			return null;
 		}
