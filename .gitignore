@@ -32,9 +32,6 @@ hs_err_pid*
 .idea/
 *.iml
 
-# VSCode
-.vscode/
-
 # maven
 target/
 
