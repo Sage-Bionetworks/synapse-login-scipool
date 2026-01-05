@@ -250,6 +250,7 @@ public class Auth extends HttpServlet {
 	public Auth() {
 		initProperties();
 		String awsRegion = getProperty(AWS_REGION_PARAMETER);
+		// Store the StsClient as a field so it can be properly closed
 		StsClient stsClient = StsClient.builder()
 				.region(Region.of(awsRegion))
 				.build();
@@ -929,8 +930,8 @@ public class Auth extends HttpServlet {
 		if (name.length()<1) {
 			throw new IllegalArgumentException("SSM parameter name cannot be empty.");
 		}
-		try {
-			DefaultCredentialsProvider.create().resolveCredentials();
+		try (DefaultCredentialsProvider credentialsProvider = DefaultCredentialsProvider.create()) {
+			credentialsProvider.resolveCredentials();
 		} catch (SdkClientException e) {
 			return null;
 		}
@@ -959,6 +960,22 @@ public class Auth extends HttpServlet {
 
 	public String getAppVersion() {
 		return appVersion;
+	}
+
+	/**
+	 * Servlet destroy method to properly close AWS SDK clients and prevent resource leaks.
+	 * Called by the servlet container when the servlet is being taken out of service.
+	 */
+	@Override
+	public void destroy() {
+		if (stsClient != null) {
+			try {
+				stsClient.close();
+			} catch (Exception e) {
+				logger.log(Level.WARNING, "Error closing STS client", e);
+			}
+		}
+		super.destroy();
 	}
 
 }
