@@ -36,11 +36,17 @@
 	
 	<dependencies>
 	
-		<!-- https://mvnrepository.com/artifact/com.amazonaws/aws-java-sdk -->
+		<!-- AWS SDK v2 dependencies -->
 		<dependency>
-		    <groupId>com.amazonaws</groupId>
-		    <artifactId>aws-java-sdk</artifactId>
-		    <version>1.12.772</version>
+		    <groupId>software.amazon.awssdk</groupId>
+		    <artifactId>sts</artifactId>
+		    <version>2.29.16</version>
+		</dependency>
+		
+		<dependency>
+		    <groupId>software.amazon.awssdk</groupId>
+		    <artifactId>ssm</artifactId>
+		    <version>2.29.16</version>
 		</dependency>
 		
 		<dependency>
