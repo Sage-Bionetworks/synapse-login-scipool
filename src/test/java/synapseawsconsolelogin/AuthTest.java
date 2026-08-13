@@ -670,6 +670,20 @@ public class AuthTest {
 	}
 
 	@Test
+	public void testDoGet_RedirectUriWithInvalidState() throws Exception {
+		mockIncomingUrl("https://www.foo.com", "/synapse");
+		when(mockHttpRequest.getParameter("code")).thenReturn("some-code");
+		when(mockHttpRequest.getParameter("state")).thenReturn("INVALID_STATE_VALUE");
+
+		// method under test
+		auth.doGet(mockHttpRequest, mockHttpResponse);
+
+		// Should redirect to root instead of throwing IllegalArgumentException
+		verify(mockHttpResponse).setStatus(303);
+		verify(mockHttpResponse).setHeader("Location", "https://www.foo.com");
+	}
+
+	@Test
 	public void testDoGet_PersonalAccessToken() throws Exception {
 		mockIncomingUrl("https://www.foo.com", "/synapse");
 		when(mockHttpRequest.getParameter("code")).thenReturn("some-code");

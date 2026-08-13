@@ -814,7 +814,15 @@ public class Auth extends HttpServlet {
 				resp.setStatus(303);
 				return;
 			}
-			RequestType requestType = RequestType.valueOf(stateParam);
+			RequestType requestType;
+			try {
+				requestType = RequestType.valueOf(stateParam);
+			} catch (IllegalArgumentException e) {
+				// Unrecognized state value — redirect to the main entry point
+				resp.setHeader(LOCATION, getThisEndpoint(req));
+				resp.setStatus(303);
+				return;
+			}
 			IdAndAccessToken tokens =  this.tokenRetriever.getTokens(getRedirectBackUrlSynapse(req), authorizationCode);
 			
 			returnToken(requestType, 
