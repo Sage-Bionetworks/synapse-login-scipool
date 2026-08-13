@@ -654,6 +654,19 @@ public class AuthTest {
 	}
 	
 	@Test
+	public void testDoGet_RedirectUriWithoutStateOrCode() throws Exception {
+		mockIncomingUrl("https://www.foo.com", "/synapse");
+		// No state or code parameters — simulates direct browser access to /synapse
+
+		// method under test
+		auth.doGet(mockHttpRequest, mockHttpResponse);
+
+		// Should redirect to root instead of throwing NullPointerException
+		verify(mockHttpResponse).setStatus(303);
+		verify(mockHttpResponse).setHeader("Location", "https://www.foo.com");
+	}
+
+	@Test
 	public void testDoGet_PersonalAccessToken() throws Exception {
 		mockIncomingUrl("https://www.foo.com", "/synapse");
 		when(mockHttpRequest.getParameter("code")).thenReturn("some-code");

@@ -796,8 +796,15 @@ public class Auth extends HttpServlet {
 			}
 		} else if (REDIRECT_URI.equals(uri)) {
 			// this is the second step, after logging in to Synapse
-			RequestType requestType = RequestType.valueOf(req.getParameter(STATE));
+			String stateParam = req.getParameter(STATE);
 			String authorizationCode = req.getParameter("code");
+			if (StringUtils.isEmpty(stateParam) || StringUtils.isEmpty(authorizationCode)) {
+				// Not a valid OAuth callback — redirect to the main entry point
+				resp.setHeader(LOCATION, getThisEndpoint(req));
+				resp.setStatus(303);
+				return;
+			}
+			RequestType requestType = RequestType.valueOf(stateParam);
 			IdAndAccessToken tokens =  this.tokenRetriever.getTokens(getRedirectBackUrlSynapse(req), authorizationCode);
 			
 			returnToken(requestType, 
