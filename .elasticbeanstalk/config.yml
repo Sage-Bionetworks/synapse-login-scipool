@@ -5,8 +5,6 @@ branch-defaults:
     environment: synapse-login-scipoolprod
   strides:
     environment: synapse-login-strides
-  bmgfki:
-    environment: synapse-login-bmgfki
 global:
   application_name: synapse-login
   workspace_type: Application

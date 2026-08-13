@@ -5,9 +5,10 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
-import static org.mockito.Matchers.any;
-import static org.mockito.Matchers.anyString;
-import static org.mockito.Matchers.eq;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -27,7 +28,7 @@ import javax.servlet.ServletOutputStream;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.junit.After;
@@ -46,19 +47,17 @@ import org.sagebionetworks.repo.model.oauth.OAuthScope;
 import org.sagebionetworks.repo.model.oauth.OIDCClaimsRequestDetails;
 import org.scribe.model.Token;
 
-import com.amazonaws.AmazonClientException;
-import com.amazonaws.SdkClientException;
-import com.amazonaws.auth.AWSCredentials;
-import com.amazonaws.auth.DefaultAWSCredentialsProviderChain;
-import com.amazonaws.services.securitytoken.AWSSecurityTokenService;
-import com.amazonaws.services.securitytoken.model.AssumeRoleRequest;
-import com.amazonaws.services.securitytoken.model.AssumeRoleResult;
-import com.amazonaws.services.securitytoken.model.Credentials;
-import com.amazonaws.services.securitytoken.model.Tag;
-import com.amazonaws.services.simplesystemsmanagement.AWSSimpleSystemsManagement;
-import com.amazonaws.services.simplesystemsmanagement.AWSSimpleSystemsManagementClientBuilder;
-import com.amazonaws.services.simplesystemsmanagement.model.ParameterType;
-import com.amazonaws.services.simplesystemsmanagement.model.PutParameterRequest;
+import software.amazon.awssdk.auth.credentials.AwsCredentials;
+import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
+import software.amazon.awssdk.core.exception.SdkClientException;
+import software.amazon.awssdk.services.sts.StsClient;
+import software.amazon.awssdk.services.sts.model.AssumeRoleRequest;
+import software.amazon.awssdk.services.sts.model.AssumeRoleResponse;
+import software.amazon.awssdk.services.sts.model.Credentials;
+import software.amazon.awssdk.services.sts.model.Tag;
+import software.amazon.awssdk.services.ssm.SsmClient;
+import software.amazon.awssdk.services.ssm.model.ParameterType;
+import software.amazon.awssdk.services.ssm.model.PutParameterRequest;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.impl.DefaultClaims;
@@ -70,7 +69,7 @@ public class AuthTest {
 	private static final String TEST_PROPERTY_NAME = "testPropertyName";
 	
 	@Mock
-	private AWSSecurityTokenService mockStsClient;
+	private StsClient mockStsClient;
 	
 	@Mock
 	private TokenRetriever mockTokenRetriever;
@@ -146,18 +145,22 @@ public class AuthTest {
 
 		when(mockHttpResponse.getOutputStream()).thenReturn(mockOutputStream);
 		
-		AssumeRoleResult assumeRoleResult = new AssumeRoleResult();
-		
-		Credentials credentials = new Credentials();
-		credentials.setAccessKeyId("accessKeyId");
-		credentials.setSecretAccessKey("secretAccessKey");
-		credentials.setSessionToken("sessionToken");
 		DateFormat df = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'");
 		TimeZone tz = TimeZone.getTimeZone("UTC");
 		df.setTimeZone(tz);
-		credentials.setExpiration(df.parse(STS_EXPIRES_ON));
-		assumeRoleResult.setCredentials(credentials);
-		when(mockStsClient.assumeRole(any())).thenReturn(assumeRoleResult);
+		
+		Credentials credentials = Credentials.builder()
+				.accessKeyId("accessKeyId")
+				.secretAccessKey("secretAccessKey")
+				.sessionToken("sessionToken")
+				.expiration(df.parse(STS_EXPIRES_ON).toInstant())
+				.build();
+		
+		AssumeRoleResponse assumeRoleResponse = AssumeRoleResponse.builder()
+				.credentials(credentials)
+				.build();
+		
+		when(mockStsClient.assumeRole(any(AssumeRoleRequest.class))).thenReturn(assumeRoleResponse);
 		
 		IdAndAccessToken idAndAccessToken = new IdAndAccessToken(new Token(ID_TOKEN, ""), new Token(ACCESS_TOKEN, ""));
 		when(mockTokenRetriever.getTokens(anyString(), anyString())).thenReturn(idAndAccessToken);
@@ -230,13 +233,13 @@ public class AuthTest {
 	public void testGetSSMParameter() {
 		Assume.assumeTrue(System.getProperty("SKIP_AWS")==null);
 		// we only want to run this test if we can connect to AWS
-		AWSCredentials credentials = null;
+		AwsCredentials credentials = null;
 		try {
-			credentials = DefaultAWSCredentialsProviderChain.getInstance().getCredentials();
+			credentials = DefaultCredentialsProvider.create().resolveCredentials();
 		} catch (SdkClientException e) {
 			Assume.assumeNoException(e);
 		}
-		Assume.assumeNotNull(credentials, credentials.getAWSAccessKeyId(), credentials.getAWSSecretKey());
+		Assume.assumeNotNull(credentials, credentials.accessKeyId(), credentials.secretAccessKey());
 		
 		String propertyName = UUID.randomUUID().toString();
 		String ssmKey = UUID.randomUUID().toString();
@@ -248,15 +251,14 @@ public class AuthTest {
 		System.setProperty(propertyName, "ssm::"+ssmKey);
 		
 		// now let's store the property in SSM
-		try {
-			AWSSimpleSystemsManagement ssmClient = AWSSimpleSystemsManagementClientBuilder.defaultClient();
-			
-			PutParameterRequest putParameterRequest = new PutParameterRequest();
-			putParameterRequest.setName(ssmKey);
-			putParameterRequest.setValue(propertyValue);
-			putParameterRequest.setType(ParameterType.SecureString);
+		try (SsmClient ssmClient = SsmClient.builder().build()) {
+			PutParameterRequest putParameterRequest = PutParameterRequest.builder()
+					.name(ssmKey)
+					.value(propertyValue)
+					.type(ParameterType.SECURE_STRING)
+					.build();
 			ssmClient.putParameter(putParameterRequest);
-		} catch (AmazonClientException e) {
+		} catch (SdkClientException e) {
 			// cannot continue with this integration test
 			return;
 		}
@@ -270,13 +272,13 @@ public class AuthTest {
 		Assume.assumeTrue(System.getProperty("SKIP_AWS")==null);
 
 		// we only want to run this test if we can connect to AWS
-		AWSCredentials credentials = null;
+		AwsCredentials credentials = null;
 		try {
-			credentials = DefaultAWSCredentialsProviderChain.getInstance().getCredentials();
+			credentials = DefaultCredentialsProvider.create().resolveCredentials();
 		} catch (SdkClientException e) {
 			Assume.assumeNoException(e);
 		}
-		Assume.assumeNotNull(credentials, credentials.getAWSAccessKeyId(), credentials.getAWSSecretKey());
+		Assume.assumeNotNull(credentials, credentials.accessKeyId(), credentials.secretAccessKey());
 
 		String propertyName = UUID.randomUUID().toString();
 		String ssmKey = UUID.randomUUID().toString();
@@ -294,10 +296,11 @@ public class AuthTest {
 	public void testGetConsoleLoginURL() throws Exception {
 		when(mockHttpGetExecutor.executeHttpGet(anyString(), eq((String)null))).thenReturn("{\"SigninToken\":\"token\"}");
 		
-		Credentials credentials = new Credentials();
-		credentials.setAccessKeyId("keyId");
-		credentials.setSecretAccessKey("keySecret");
-		credentials.setSessionToken("token");
+		Credentials credentials = Credentials.builder()
+				.accessKeyId("keyId")
+				.secretAccessKey("keySecret")
+				.sessionToken("token")
+				.build();
 		
 		// method under test
 		String actual = auth.getConsoleLoginURL(mockHttpRequest, credentials);
@@ -349,18 +352,18 @@ public class AuthTest {
 		// method under test
 		AssumeRoleRequest request = auth.createAssumeRoleRequest(claims, roleArn, selectedTeam);
 		
-		assertEquals(roleArn, request.getRoleArn());
-		assertEquals("1:aname", request.getRoleSessionName());
+		assertEquals(roleArn, request.roleArn());
+		assertEquals("1:aname", request.roleSessionName());
 		
-		assertEquals(4, request.getTags().size());
+		assertEquals(4, request.tags().size());
 
-		assertTrue(request.getTags().contains((new Tag()).withKey("synapse-user_name").withValue("aname")));
-		assertTrue(request.getTags().contains((new Tag()).withKey("synapse-userid").withValue("1")));
-		assertTrue(request.getTags().contains((new Tag()).withKey("synapse-team").withValue("10101")));
+		assertTrue(request.tags().contains(Tag.builder().key("synapse-user_name").value("aname").build()));
+		assertTrue(request.tags().contains(Tag.builder().key("synapse-userid").value("1").build()));
+		assertTrue(request.tags().contains(Tag.builder().key("synapse-team").value("10101").build()));
 		
 		boolean containsNonceTag = false;
-		for (Tag tag : request.getTags()) {
-			if (tag.getKey().equals("synapse-nonce") && StringUtils.isNotEmpty(tag.getValue())) {
+		for (Tag tag : request.tags()) {
+			if (tag.key().equals("synapse-nonce") && StringUtils.isNotEmpty(tag.value())) {
 				containsNonceTag = true;
 			}
 		}
@@ -681,5 +684,58 @@ public class AuthTest {
 		verify(mockHttpResponse).setContentLength(expectedBytes.length);
 		verify(mockHttpResponse).setContentType("application/force-download");
 	}
+	
+	private static void hstsIsSet(HttpServletResponse mockHttpResponse) {
+		verify(mockHttpResponse).setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");		
+	}
+	
+	private static void hstsIsNOTSet(HttpServletResponse mockHttpResponse) {
+		verify(mockHttpResponse, never()).setHeader(eq("Strict-Transport-Security"), anyString());		
+	}
+	
+	@Test
+	public void testHSTSSecureGet() throws Exception {
+		mockIncomingUrl("https://www.foo.com", "/unknown");
+		when (mockHttpRequest.isSecure()).thenReturn(true);
+
+		// method under test
+		auth.doGet(mockHttpRequest, mockHttpResponse);
+		
+		hstsIsSet(mockHttpResponse);
+	}
+	
+	@Test
+	public void testHSTSSecurePost() throws Exception {
+		mockIncomingUrl("https://www.foo.com", "/unknown");
+		when (mockHttpRequest.isSecure()).thenReturn(true);
+
+		// method under test
+		auth.doPost(mockHttpRequest, mockHttpResponse);
+		
+		hstsIsSet(mockHttpResponse);
+	}
+	
+	@Test
+	public void testHSTSInsecureGet() throws Exception {
+		mockIncomingUrl("http://www.foo.com", "/unknown");
+		when (mockHttpRequest.isSecure()).thenReturn(false);
+
+		// method under test
+		auth.doGet(mockHttpRequest, mockHttpResponse);
+		
+		hstsIsNOTSet(mockHttpResponse);
+	}
+	
+	@Test
+	public void testHSTSInsecurePost() throws Exception {
+		mockIncomingUrl("http://www.foo.com", "/unknown");
+		when (mockHttpRequest.isSecure()).thenReturn(false);
+
+		// method under test
+		auth.doPost(mockHttpRequest, mockHttpResponse);
+		
+		hstsIsNOTSet(mockHttpResponse);
+	}
+	
 	
 }

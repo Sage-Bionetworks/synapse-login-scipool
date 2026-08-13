@@ -35,7 +35,7 @@ import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -54,30 +54,29 @@ import org.sagebionetworks.repo.model.oauth.OIDCClaimsRequestDetails;
 import org.scribe.model.OAuthConfig;
 import org.scribe.model.Verifier;
 
-import com.amazonaws.AmazonClientException;
-import com.amazonaws.SdkClientException;
-import com.amazonaws.auth.DefaultAWSCredentialsProviderChain;
-import com.amazonaws.regions.Regions;
-import com.amazonaws.services.securitytoken.AWSSecurityTokenService;
-import com.amazonaws.services.securitytoken.AWSSecurityTokenServiceClientBuilder;
-import com.amazonaws.services.securitytoken.model.AssumeRoleRequest;
-import com.amazonaws.services.securitytoken.model.AssumeRoleResult;
-import com.amazonaws.services.securitytoken.model.Credentials;
-import com.amazonaws.services.securitytoken.model.Tag;
-import com.amazonaws.services.simplesystemsmanagement.AWSSimpleSystemsManagement;
-import com.amazonaws.services.simplesystemsmanagement.AWSSimpleSystemsManagementClientBuilder;
-import com.amazonaws.services.simplesystemsmanagement.model.GetParameterRequest;
-import com.amazonaws.services.simplesystemsmanagement.model.GetParameterResult;
+import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
+import software.amazon.awssdk.core.exception.SdkClientException;
+import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.sts.StsClient;
+import software.amazon.awssdk.services.sts.model.AssumeRoleRequest;
+import software.amazon.awssdk.services.sts.model.AssumeRoleResponse;
+import software.amazon.awssdk.services.sts.model.Credentials;
+import software.amazon.awssdk.services.sts.model.Tag;
+import software.amazon.awssdk.services.ssm.SsmClient;
+import software.amazon.awssdk.services.ssm.model.GetParameterRequest;
+import software.amazon.awssdk.services.ssm.model.GetParameterResponse;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Header;
 import io.jsonwebtoken.Jwt;
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.lang.Collections;
 
 
 public class Auth extends HttpServlet {
 	private static Logger logger = Logger.getLogger("Auth");
+
+	private static final String StrictTransportSecurityHeaderName = "Strict-Transport-Security";
+	private static final String StrictTransportSecurityHeaderValue = "max-age=31536000; includeSubDomains";
 
 	private static final String TEAM_CLAIM_NAME = "team";
 
@@ -91,7 +90,7 @@ public class Auth extends HttpServlet {
 	// we need 'openid' scope to get user claims/info and we need 'authorize' scope to create
 	// a personal access token
 	private static final List<OAuthScope> OAUTH_SCOPES = 
-			Collections.arrayToList(new OAuthScope[] {OAuthScope.openid, OAuthScope.authorize});
+			java.util.Arrays.asList(new OAuthScope[] {OAuthScope.openid, OAuthScope.authorize});
 	private static final String SPACE_SEPARATED_SCOPES;
 	
 	static {
@@ -190,7 +189,7 @@ public class Auth extends HttpServlet {
 	private Properties ssmParameterCache = null;
 	private String awsConsoleUrl;
 	private String appVersion = null;
-	private AWSSecurityTokenService stsClient = null;
+	private StsClient stsClient = null;
 	private HttpGetExecutor httpGetExecutor	= null;
 	private TokenRetriever tokenRetriever = null;
 	private JWTClaimsExtractor jwtClaimsExtractor = null;
@@ -212,7 +211,7 @@ public class Auth extends HttpServlet {
 		return result;
 	}
 
-	private void init(AWSSecurityTokenService stsClient, 
+	private void init(StsClient stsClient, 
 			HttpGetExecutor httpGetExecutor, 
 			TokenRetriever tokenRetriever,
 			JWTClaimsExtractor jwtClaimsExtractor,
@@ -239,7 +238,7 @@ public class Auth extends HttpServlet {
 	/*
 	 * For testing
 	 */
-	public Auth(AWSSecurityTokenService stsClient, 
+	public Auth(StsClient stsClient, 
 			HttpGetExecutor httpGetExecutor, 
 			TokenRetriever tokenRetriever,
 			JWTClaimsExtractor jwtClaimsExtractor,
@@ -251,8 +250,9 @@ public class Auth extends HttpServlet {
 	public Auth() {
 		initProperties();
 		String awsRegion = getProperty(AWS_REGION_PARAMETER);
-		AWSSecurityTokenService stsClient = AWSSecurityTokenServiceClientBuilder.standard()
-				.withRegion(Regions.fromName(awsRegion)).build();
+		StsClient stsClient = StsClient.builder()
+				.region(Region.of(awsRegion))
+				.build();
 		
 		HttpGetExecutor httpExecutor = new HttpGetExecutor() {
 			@Override
@@ -348,7 +348,7 @@ public class Auth extends HttpServlet {
 		for (Map.Entry<String,OIDCClaimsRequestDetails> entry : getUserInfoClaims().entrySet()) {
 			String claimName = entry.getKey();
 			if (first) first=false; else sb.append(",");
-			if (Collections.isEmpty(entry.getValue().getValues())) {
+			if (entry.getValue().getValues() == null || entry.getValue().getValues().isEmpty()) {
 				sb.append(String.format(CLAIM_TEMPLATE, claimName));				
 			} else {
 				teams = entry.getValue().getValues();
@@ -368,6 +368,9 @@ public class Auth extends HttpServlet {
 	@Override
 	public void doPost(HttpServletRequest req, HttpServletResponse resp)
 			throws IOException {
+		if (req.isSecure()) {
+			resp.setHeader(StrictTransportSecurityHeaderName, StrictTransportSecurityHeaderValue);
+		}
 		resp.setContentType("text/plain");
 		try (ServletOutputStream os=resp.getOutputStream()) {
 			os.println("Not found.");
@@ -405,11 +408,14 @@ public class Auth extends HttpServlet {
 		// and we don't expect others. For the rest we'll just return 500.
 		return 500;
 	}
-
+	
 	@Override
 	public void doGet(HttpServletRequest req, HttpServletResponse resp)
 			throws IOException {
 		try {
+			if (req.isSecure()) {
+				resp.setHeader(StrictTransportSecurityHeaderName, StrictTransportSecurityHeaderValue);
+			}
 			doGetIntern(req, resp);
 		} catch (Exception e) {
 			handleException(e, resp);
@@ -456,9 +462,9 @@ public class Auth extends HttpServlet {
 		// including the access key ID,  secret access key, and security token.
 		String sessionJson = String.format(
 		  "{\"%1$s\":\"%2$s\",\"%3$s\":\"%4$s\",\"%5$s\":\"%6$s\"}",
-		  "sessionId", federatedCredentials.getAccessKeyId(),
-		  "sessionKey", federatedCredentials.getSecretAccessKey(),
-		  "sessionToken", federatedCredentials.getSessionToken());
+		  "sessionId", federatedCredentials.accessKeyId(),
+		  "sessionKey", federatedCredentials.secretAccessKey(),
+		  "sessionToken", federatedCredentials.sessionToken());
 		              
 		// Construct the sign-in request with the request sign-in token action, a
 		// specified console session duration, and the JSON document with temporary 
@@ -533,15 +539,19 @@ public class Auth extends HttpServlet {
 		String awsSessionName = stringBuilder.toString();
 		
 		// get STS token
-		AssumeRoleRequest assumeRoleRequest = new AssumeRoleRequest();
-		assumeRoleRequest.setRoleArn(roleArn);
-		assumeRoleRequest.setRoleSessionName(awsSessionName);
 		Collection<Tag> tags = new ArrayList<Tag>();
 		for (String tagName: sessionTags.keySet()) {
-			tags.add(new Tag().withKey(tagName).withValue(sanitizeTagValue(sessionTags.get(tagName))));				
+			tags.add(Tag.builder()
+					.key(tagName)
+					.value(sanitizeTagValue(sessionTags.get(tagName)))
+					.build());				
 		}
-		assumeRoleRequest.setTags(tags);
-		return assumeRoleRequest;
+		
+		return AssumeRoleRequest.builder()
+				.roleArn(roleArn)
+				.roleSessionName(awsSessionName)
+				.tags(tags)
+				.build();
 	}
 	
 	/**
@@ -596,8 +606,8 @@ public class Auth extends HttpServlet {
 	void redirectToSCConsole(Map<String,Object> claims, String roleArn, String selectedTeam, HttpServletRequest req, HttpServletResponse resp) throws IOException {
 		AssumeRoleRequest assumeRoleRequest = createAssumeRoleRequest(claims, roleArn, selectedTeam);
 		
-		AssumeRoleResult assumeRoleResult = stsClient.assumeRole(assumeRoleRequest);
-		Credentials credentials = assumeRoleResult.getCredentials();
+		AssumeRoleResponse assumeRoleResponse = stsClient.assumeRole(assumeRoleRequest);
+		Credentials credentials = assumeRoleResponse.credentials();
 		// redirect to AWS login
 		String redirectURL = getConsoleLoginURL(req, credentials);
 		
@@ -626,13 +636,13 @@ public class Auth extends HttpServlet {
 	void returnStsToken(Map<String,Object> claims, String roleArn, String selectedTeam, HttpServletResponse resp) throws IOException {
 		AssumeRoleRequest assumeRoleRequest = createAssumeRoleRequest(claims, roleArn, selectedTeam);
 		
-		AssumeRoleResult assumeRoleResult = stsClient.assumeRole(assumeRoleRequest);
-		Credentials credentials = assumeRoleResult.getCredentials();
+		AssumeRoleResponse assumeRoleResponse = stsClient.assumeRole(assumeRoleRequest);
+		Credentials credentials = assumeRoleResponse.credentials();
 		Map<String,Object> sts = new HashMap<String,Object>();
-		sts.put("AccessKeyId", credentials.getAccessKeyId());
-		sts.put("SecretAccessKey", credentials.getSecretAccessKey());
-		sts.put("SessionToken", credentials.getSessionToken());
-		sts.put("Expiration", formatDateAsIso8601(credentials.getExpiration()));
+		sts.put("AccessKeyId", credentials.accessKeyId());
+		sts.put("SecretAccessKey", credentials.secretAccessKey());
+		sts.put("SessionToken", credentials.sessionToken());
+		sts.put("Expiration", formatDateAsIso8601(Date.from(credentials.expiration())));
 		sts.put("Version", 1);
 
 		writeFileToResponse(createSerializedJSON(sts), STS_TOKEN_FILE_NAME, resp);
@@ -927,19 +937,21 @@ public class Auth extends HttpServlet {
 			throw new IllegalArgumentException("SSM parameter name cannot be empty.");
 		}
 		try {
-			DefaultAWSCredentialsProviderChain.getInstance().getCredentials();
+			DefaultCredentialsProvider.create().resolveCredentials();
 		} catch (SdkClientException e) {
 			return null;
 		}
-		AWSSimpleSystemsManagement ssmClient = AWSSimpleSystemsManagementClientBuilder.defaultClient();
-		GetParameterRequest getParameterRequest = new GetParameterRequest();
-		getParameterRequest.setName(name);
-		getParameterRequest.setWithDecryption(true);
-		try {
-			GetParameterResult getParameterResult = ssmClient.getParameter(getParameterRequest);
-			return getParameterResult.getParameter().getValue();
-		} catch (AmazonClientException e) {
-			return null;
+		try (SsmClient ssmClient = SsmClient.builder().build()) {
+			GetParameterRequest getParameterRequest = GetParameterRequest.builder()
+					.name(name)
+					.withDecryption(true)
+					.build();
+			try {
+				GetParameterResponse getParameterResponse = ssmClient.getParameter(getParameterRequest);
+				return getParameterResponse.parameter().value();
+			} catch (SdkClientException e) {
+				return null;
+			}
 		}
 	}
 
